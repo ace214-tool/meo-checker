@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEO継続課金ステータス照合</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Hiragino Sans', 'Meiryo', 'Yu Gothic', sans-serif;
+  background: #f0f2f5;
+  color: #333;
+  min-height: 100vh;
+}
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+header {
+  background: linear-gradient(135deg, #1a73e8, #0d47a1);
+  color: white; padding: 24px 32px; border-radius: 12px;
+  margin-bottom: 24px; box-shadow: 0 4px 16px rgba(26,115,232,0.35);
+}
+header h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.03em; }
+header p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
+
+.upload-card {
+  background: white; border-radius: 12px; padding: 24px;
+  margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.drop-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;
+}
+.drop-slot {
+  display: flex; border-radius: 10px; overflow: hidden; cursor: pointer;
+  border: 2px dashed #c5d3e8; background: #fafbfc; transition: all 0.2s; min-height: 80px;
+}
+.drop-slot:hover, .drop-slot.drag-over { border-color: #1a73e8; background: #e8f0fe; }
+.drop-slot.loaded { border-style: solid; border-color: #c5d3e8; background: #f8f9fa; }
+.ds-color { width: 6px; flex-shrink: 0; }
+.ds-body { padding: 12px 16px; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.ds-label { font-size: 14px; font-weight: 700; }
+.ds-hint { font-size: 11px; color: #aaa; margin-top: 2px; }
+.ds-status { font-size: 12px; color: #666; margin-top: 6px; }
+
+.auto-msg { text-align: center; margin-top: 12px; font-size: 13px; color: #1a73e8; font-weight: 700; display: none; }
+.auto-msg.visible { display: block; }
+
+.date-card {
+  background: white; border-radius: 12px; padding: 18px 24px; margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+}
+.date-card label { font-size: 14px; font-weight: 700; color: #333; white-space: nowrap; }
+.date-card .date-note { font-size: 12px; color: #888; }
+.date-input {
+  border: 2px solid #c5d3e8; border-radius: 8px; padding: 8px 14px; font-size: 15px;
+  font-family: inherit; color: #333; background: #f8faff; cursor: pointer; outline: none;
+}
+.date-input:focus { border-color: #1a73e8; background: #e8f0fe; }
+.date-tag { font-size: 12px; background: #e8f0fe; color: #1a73e8; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
+
+.btn-area { text-align: center; margin-bottom: 28px; }
+.btn-match {
+  background: linear-gradient(135deg, #1a73e8, #0d47a1); color: white; border: none;
+  padding: 14px 52px; border-radius: 8px; font-size: 16px; font-weight: 700;
+  cursor: pointer; letter-spacing: 0.05em; box-shadow: 0 4px 14px rgba(26,115,232,0.35);
+}
+.btn-match:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(26,115,232,0.45); }
+.btn-match:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
+
+.results { display: none; }
+.results.visible { display: block; }
+.summary-bar {
+  background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+}
+.summary-label { font-weight: 700; font-size: 14px; color: #333; margin-right: 4px; }
+.summary-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.s-badge { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; }
+.s-count { font-size: 22px; font-weight: 800; line-height: 1; }
+.s-unit { font-size: 12px; color: #999; }
+.s-total { margin-left: auto; font-size: 13px; color: #555; }
+
+.pattern-section { background: white; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; }
+.pattern-header { padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+.ph-num { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: white; flex-shrink: 0; }
+.ph-title { font-size: 15px; font-weight: 700; color: white; }
+.ph-sub { font-size: 11px; color: rgba(255,255,255,0.8); margin-top: 2px; }
+.ph-count { margin-left: auto; background: rgba(255,255,255,0.25); color: white; font-weight: 700; font-size: 14px; padding: 4px 14px; border-radius: 20px; }
+.pattern-body { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th { padding: 10px 14px; text-align: left; font-weight: 600; background: #f8f9fa; border-bottom: 2px solid #e8eaed; white-space: nowrap; color: #555; }
+tbody tr { border-bottom: 1px solid #f0f0f0; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: #f8f9fa; }
+tbody td { padding: 10px 14px; white-space: nowrap; }
+.date-val { color: #1a73e8; font-weight: 700; }
+.empty-msg { padding: 28px; text-align: center; color: #aaa; font-size: 13px; }
+.day-icons-row { display: flex; gap: 3px; align-items: center; }
+.day-icon-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.day-icon-cell .di-label { font-size: 9px; color: #aaa; line-height: 1; }
+.day-icon-cell .di-icon { font-size: 15px; line-height: 1; }
+
+.p1 .pattern-header { background: linear-gradient(135deg, #f6a623, #e07b00); }
+.p3 .pattern-header { background: linear-gradient(135deg, #1a73e8, #0b47a1); }
+.p4 .pattern-header { background: linear-gradient(135deg, #ea4335, #b3120f); }
+.p1-color { color: #e07b00; } .p3-color { color: #0b47a1; } .p4-color { color: #b3120f; }
+.p1-bg { background: #e07b00; } .p3-bg { background: #0b47a1; } .p4-bg { background: #b3120f; }
+
+@media (max-width: 700px) { .drop-grid { grid-template-columns: 1fr; } .summary-bar { gap: 12px; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>MEO継続課金ステータス照合ツール</h1>
+    <p>各スロットにCSVをドロップ → 全ファイル揃うと自動照合</p>
+  </header>
+
+  <div class="upload-card">
+    <div class="drop-grid">
+      <div class="drop-slot" data-slot="meo" id="dropSlot-meo">
+        <input type="file" accept=".csv" style="display:none" id="fileInput-meo">
+        <div class="ds-color" style="background:#ea4335"></div>
+        <div class="ds-body">
+          <div class="ds-label" style="color:#ea4335">MEO案件管理</div>
+          <div class="ds-hint">MEO案件管理_xxx.csv</div>
+          <div class="ds-status" id="fname-meo">⬜ 未読み込み</div>
+        </div>
+      </div>
+      <div class="drop-slot" data-slot="tool" id="dropSlot-tool">
+        <input type="file" accept=".csv" style="display:none" id="fileInput-tool">
+        <div class="ds-color" style="background:#e07b00"></div>
+        <div class="ds-body">
+          <div class="ds-label" style="color:#e07b00">モノ</div>
+          <div class="ds-hint">report_days_xxx.csv</div>
+          <div class="ds-status" id="fname-tool">⬜ 未読み込み</div>
+        </div>
+      </div>
+      <div class="drop-slot" data-slot="cheki" id="dropSlot-cheki">
+        <input type="file" accept=".csv" style="display:none" id="fileInput-cheki">
+        <div class="ds-color" style="background:#34a853"></div>
+        <div class="ds-body">
+          <div class="ds-label" style="color:#34a853">チェキ</div>
+          <div class="ds-hint">MEO_google_xxx.csv</div>
+          <div class="ds-status" id="fname-cheki">⬜ 未読み込み</div>
+        </div>
+      </div>
+      <div class="drop-slot" data-slot="gmo" id="dropSlot-gmo">
+        <input type="file" accept=".csv" multiple style="display:none" id="fileInput-gmo">
+        <div class="ds-color" style="background:#1a73e8"></div>
+        <div class="ds-body">
+          <div class="ds-label" style="color:#1a73e8">GMO</div>
+          <div class="ds-hint">kwrank_google_xxx.csv（2ファイル）</div>
+          <div class="ds-status" id="fname-gmo">⬜ 未読み込み（0/2）</div>
+        </div>
+      </div>
+    </div>
+    <div class="auto-msg" id="autoMsg">✅ 全ファイル揃いました！自動照合を実行中...</div>
+  </div>
+
+  <div class="date-card">
+    <label for="judgeDate">📅 判定日</label>
+    <input type="date" id="judgeDate" class="date-input">
+    <span class="date-tag" id="dateTag"></span>
+    <span class="date-note">この日付時点のデータでステータスをシミュレーションします</span>
+  </div>
+
+  <div class="btn-area">
+    <button class="btn-match" id="btnMatch" disabled onclick="runMatch()">照合する</button>
+  </div>
+
+  <div class="results" id="results">
+    <div class="summary-bar" id="summaryBar"></div>
+    <div id="patternResults"></div>
+  </div>
+</div>
+
+<script>
+let meoData = null, toolData = null, chekiData = null, gmoData = null, gmoFiles = [];
+
+(function initDate() {
+  const inp = document.getElementById('judgeDate');
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const ymd = y.getFullYear() + '-' + String(y.getMonth()+1).padStart(2,'0') + '-' + String(y.getDate()).padStart(2,'0');
+  inp.value = ymd;
+  updateDateTag(ymd);
+  inp.addEventListener('change', () => updateDateTag(inp.value));
+})();
+function updateDateTag(ymd) {
+  if (!ymd) { document.getElementById('dateTag').textContent = ''; return; }
+  const [y, m, d] = ymd.split('-');
+  document.getElementById('dateTag').textContent = `${y}年${m}月${d}日 時点`;
+}
+
+function parseCSV(raw) {
+  raw = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = raw.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = splitCSVLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = splitCSVLine(lines[i]);
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h.trim()] = (vals[idx] ?? '').trim(); });
+    rows.push(obj);
+  }
+  return rows;
+}
+function splitCSVLine(line) {
+  const out = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (c === ',' && !inQ) { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur); return out;
+}
+
+// ─── ファイル名→自動振り分け ─────────────────────────────
+const FILE_RULES = [
+  { key: 'meo',   pattern: /^MEO案件管理/i,  label: 'MEO案件管理', encoding: 'UTF-8' },
+  { key: 'tool',  pattern: /^report_days/i,   label: 'モノ',        encoding: 'UTF-8' },
+  { key: 'cheki', pattern: /^MEO_google/i,    label: 'チェキ',      encoding: 'UTF-8' },
+  { key: 'gmo',   pattern: /^kwrank_google/i, label: 'GMO',         encoding: 'Shift_JIS' },
+];
+function detectSlot(fileName) {
+  for (const r of FILE_RULES) { if (r.pattern.test(fileName)) return r; }
+  return null;
+}
+
+// ─── 統合ドロップ（個別スロット対応）───────────────────────
+const SLOT_KEYS = ['meo','tool','cheki','gmo'];
+SLOT_KEYS.forEach(key => {
+  const slot = document.getElementById('dropSlot-' + key);
+  const inp = document.getElementById('fileInput-' + key);
+  slot.addEventListener('click', () => inp.click());
+  inp.addEventListener('change', e => { handleSlotFiles(key, Array.from(e.target.files)); inp.value = ''; });
+  slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
+  slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+  slot.addEventListener('drop', e => { e.preventDefault(); slot.classList.remove('drag-over'); handleSlotFiles(key, Array.from(e.dataTransfer.files)); });
+});
+
+function handleSlotFiles(slotKey, files) {
+  for (const f of files) {
+    const rule = FILE_RULES.find(r => r.key === slotKey);
+    if (!rule) continue;
+    // ファイル名がスロットのパターンと一致するか検証
+    const detected = detectSlot(f.name);
+    if (detected && detected.key !== slotKey) {
+      const ok = confirm('⚠️ 「' + f.name + '」は「' + detected.label + '」用のファイルに見えますが、\n「' + rule.label + '」スロットに入れようとしています。\n\nこのまま読み込みますか？');
+      if (!ok) continue;
+    }
+    readAndStore(f, rule);
+  }
+}
+function readAndStore(file, rule) {
+  if (rule.key !== 'gmo') {
+    if (document.getElementById('dropSlot-' + rule.key).classList.contains('loaded')) return;
+  } else { if (gmoFiles.length >= 2) return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try { storeData(rule.key, file.name, parseCSV(e.target.result)); }
+    catch (err) { alert('CSV読み込みエラー (' + file.name + '): ' + err.message); }
+  };
+  reader.readAsText(file, rule.encoding);
+}
+function storeData(key, fileName, data) {
+  if (key === 'meo') { meoData = data; markSlot('meo', fileName, data.length); }
+  else if (key === 'tool') { toolData = data; markSlot('tool', fileName, data.length); }
+  else if (key === 'cheki') { chekiData = data; markSlot('cheki', fileName, data.length); }
+  else if (key === 'gmo') {
+    gmoFiles.push({ name: fileName, data });
+    if (gmoFiles.length === 1) { markSlotGmoHalf(fileName, data.length); }
+    else if (gmoFiles.length >= 2) {
+      gmoData = gmoFiles[0].data.concat(gmoFiles[1].data);
+      markSlotGmoFull(gmoData.length);
+    }
+  }
+  checkAutoRun();
+}
+function markSlot(key, fileName, cnt) {
+  const s = document.getElementById('dropSlot-' + key);
+  s.classList.add('loaded');
+  document.getElementById('fname-' + key).textContent = '✅ ' + fileName + '（' + cnt + '行）';
+}
+function markSlotGmoHalf(fileName, cnt) {
+  document.getElementById('fname-gmo').textContent = '⏳ 1/2: ' + fileName + '（' + cnt + '行）';
+}
+function markSlotGmoFull(total) {
+  const s = document.getElementById('dropSlot-gmo');
+  s.classList.add('loaded');
+  document.getElementById('fname-gmo').textContent = '✅ 2/2 完了（計' + total + '行）';
+}
+function checkAutoRun() {
+  const allReady = meoData && toolData && chekiData && gmoData;
+  updateBtnState();
+  if (allReady) {
+    document.getElementById('autoMsg').classList.add('visible');
+    setTimeout(() => runMatch(), 300);
+  }
+}
+function updateBtnState() {
+  document.getElementById('btnMatch').disabled = !meoData || !(toolData || chekiData || gmoData);
+}
+
+// ================================================================
+//  モノCSV 用ロジック
+// ================================================================
+function buildMonoDailyResults(toolRows, cutoffYMD) {
+  if (!toolRows.length) return {};
+  const headers = Object.keys(toolRows[0]);
+  let dateCols = headers.filter(h => /^\d{1,2}\/\d{2}$/.test(h.trim()));
+  if (cutoffYMD) {
+    const [cy, cm, cd] = cutoffYMD.split('-').map(Number);
+    dateCols = dateCols.filter(col => { const [M,D] = col.split('/').map(Number); return M !== cm ? M < cm : D <= cd; });
+  }
+  const byUser = {};
+  for (const row of toolRows) { const uid = row['ユーザーID']; if (!uid) continue; (byUser[uid] = byUser[uid] || []).push(row); }
+  const result = {};
+  for (const [uid, rows] of Object.entries(byUser)) {
+    result[uid] = dateCols.map(col => {
+      const ranks = rows.map(r => { const n = parseInt((r[col]||'').trim()); return isNaN(n)?null:n; }).filter(n=>n!==null);
+      return { date: col, win: ranks.some(n => n>=1 && n<=3) };
+    });
+  }
+  return result;
+}
+function simulateMono(dailyResults) {
+  let status = '×', firstSuccessDate = null;
+  for (let i = 0; i < dailyResults.length; i++) {
+    const { date, win } = dailyResults[i];
+    if (status === '×') { if (win) { status = '▲'; firstSuccessDate = date; } }
+    else if (status === '▲') { if (i>=2 && dailyResults[i-2].win && dailyResults[i-1].win && win) status = '〇'; }
+    else if (status === '〇') { if (i>=2 && !dailyResults[i-2].win && !dailyResults[i-1].win && !win) status = '▲'; }
+  }
+  return { status, firstSuccessDate };
+}
+
+// ================================================================
+//  チェキCSV 用ロジック
+// ================================================================
+function buildChekiDailyResults(chekiRows, cutoffDay) {
+  const result = {};
+  for (const row of chekiRows) {
+    const m = (row['施設名']||'').trim().match(/_([A-Z]{2}\d[\w\-]*)$/);
+    if (!m) continue;
+    const custId = m[1].trim(), days = [];
+    for (let d=1; d<=31; d++) {
+      if (cutoffDay && d > cutoffDay) break;
+      const v = (row[String(d)]||'').trim();
+      if (v === '') continue;
+      days.push({ date: String(d), win: v==='◯'||v==='○' });
+    }
+    result[custId] = days;
+  }
+  return result;
+}
+function simulateCheki(dailyResults) {
+  let status = '×', firstSuccessDate = null;
+  for (let i = 0; i < dailyResults.length; i++) {
+    const { date, win } = dailyResults[i];
+    if (status === '×') { if (win) { status = '▲'; firstSuccessDate = date; } }
+    else if (status === '▲') { if (i>=2 && dailyResults[i-2].win && dailyResults[i-1].win && win) status = '〇'; }
+    else if (status === '〇') { if (i>=2 && !dailyResults[i-2].win && !dailyResults[i-1].win && !win) status = '▲'; }
+  }
+  return { status, firstSuccessDate };
+}
+
+// ================================================================
+//  GMOCSV 用ロジック
+// ================================================================
+function buildGmoDailyResults(gmoRows, cutoffYMD) {
+  if (!gmoRows.length) return {};
+  const headers = Object.keys(gmoRows[0]);
+  let dateCols = headers.filter(h => /^\d{4}\/\d{2}\/\d{2}$/.test(h.trim()));
+  if (cutoffYMD) { const cs = cutoffYMD.replace(/-/g,'/'); dateCols = dateCols.filter(c => c <= cs); }
+  dateCols.sort();
+  const byStore = {};
+  for (const row of gmoRows) {
+    const m = (row['店舗名']||'').trim().match(/_([A-Z]{2}\d[\w\-]*)$/);
+    if (!m) continue;
+    (byStore[m[1].trim()] = byStore[m[1].trim()] || []).push(row);
+  }
+  const result = {};
+  for (const [custId, rows] of Object.entries(byStore)) {
+    result[custId] = dateCols.map(col => {
+      const ranks = rows.map(r => { const n = parseInt((r[col]||'').trim()); return isNaN(n)?null:n; }).filter(n=>n!==null);
+      return { date: col.slice(5).replace(/^0/,''), win: ranks.some(n => n>=1 && n<=3) };
+    });
+  }
+  return result;
+}
+const simulateGmo = simulateCheki;
+
+// ================================================================
+//  照合メイン
+// ================================================================
+function runMatch() {
+  if (!meoData) return;
+  const btn = document.getElementById('btnMatch');
+  btn.disabled = true; btn.textContent = '照合中...';
+  setTimeout(() => {
+    try {
+      const cutoffYMD = document.getElementById('judgeDate').value;
+      const cutoffDay = cutoffYMD ? parseInt(cutoffYMD.split('-')[2]) : null;
+      let monoSimMap={}, monoUD={};
+      if (toolData) { monoUD = buildMonoDailyResults(toolData, cutoffYMD); for (const [u,d] of Object.entries(monoUD)) monoSimMap[u] = simulateMono(d); }
+      let chekiSimMap={}, chekiUD={};
+      if (chekiData) { chekiUD = buildChekiDailyResults(chekiData, cutoffDay); for (const [c,d] of Object.entries(chekiUD)) chekiSimMap[c] = simulateCheki(d); }
+      let gmoSimMap={}, gmoUD={};
+      if (gmoData) { gmoUD = buildGmoDailyResults(gmoData, cutoffYMD); for (const [c,d] of Object.entries(gmoUD)) gmoSimMap[c] = simulateGmo(d); }
+
+      const buckets = [[],[],[]];
+      for (const row of meoData) {
+        const tool = (row['提供ツール']||'').trim(), custNum = (row['顧客番号']||'').trim();
+        const kRaw = (row['継続課金']||'').trim();
+        const isBlank = kRaw===''||kRaw==='×'||kRaw.toLowerCase()==='x';
+        let sim=null, days=[];
+        if (tool==='モノ') { const uid=(row['モノ顧客番号']||'').trim(); if(!uid||!monoSimMap[uid]) continue; sim=monoSimMap[uid]; days=monoUD[uid]||[]; }
+        else if (tool==='チェキ') { if(!chekiSimMap[custNum]) continue; sim=chekiSimMap[custNum]; days=chekiUD[custNum]||[]; }
+        else if (tool==='GMO') { if(!gmoSimMap[custNum]) continue; sim=gmoSimMap[custNum]; days=gmoUD[custNum]||[]; }
+        else continue;
+        const simSt=sim.status;
+        const entry = { 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, kintone:isBlank?'':kRaw, simStatus:simSt, firstDate:sim.firstSuccessDate||'', last7:days.slice(-7) };
+        if (isBlank && (simSt==='▲'||simSt==='〇')) buckets[0].push(entry);
+        else if (kRaw==='▲' && simSt==='〇') buckets[1].push(entry);
+        else if (kRaw==='〇' && simSt==='▲') buckets[2].push(entry);
+      }
+      renderResults(buckets, cutoffYMD);
+    } catch(err) { alert('照合エラー: '+err.message); }
+    finally { updateBtnState(); btn.textContent='照合する'; }
+  }, 20);
+}
+
+// ─── Rendering ───────────────────────────────────────────
+const PATTERNS = [
+  { cls:'p1', bgCls:'p1-bg', colorCls:'p1-color', label:'空白 → ▲／〇', desc:'kintone 未設定・成果あり（要登録）', showDate:true },
+  { cls:'p3', bgCls:'p3-bg', colorCls:'p3-color', label:'▲ → 〇', desc:'仮課金→本課金へ昇格（継続課金を〇に変更）', showDate:false },
+  { cls:'p4', bgCls:'p4-bg', colorCls:'p4-color', label:'〇 → ▲', desc:'本課金→3日連続未達で降格（要確認）', showDate:false },
+];
+function renderResults(buckets, cutoffYMD) {
+  const total = buckets.reduce((s,b)=>s+b.length,0);
+  let dl = '';
+  if (cutoffYMD) { const [y,m,d]=cutoffYMD.split('-'); dl=`<span style="font-size:12px;color:#1a73e8;background:#e8f0fe;padding:4px 12px;border-radius:20px;font-weight:700;margin-right:4px;">📅 判定日：${y}年${m}月${d}日 時点</span>`; }
+  document.getElementById('summaryBar').innerHTML = dl +
+    `<span class="summary-label">差異件数：</span>` +
+    PATTERNS.map((p,i)=>`<div class="summary-item"><span class="s-badge ${p.bgCls}">${i+1}</span><span style="color:#666">${p.label}</span><span class="s-count ${p.colorCls}">${buckets[i].length}</span><span class="s-unit">件</span></div>`).join('') +
+    `<span class="s-total">合計 <strong>${total}</strong> 件</span>`;
+  document.getElementById('patternResults').innerHTML = PATTERNS.map((p,i)=>`
+    <div class="pattern-section ${p.cls}"><div class="pattern-header"><div class="ph-num">${i+1}</div><div><div class="ph-title">${p.label}</div><div class="ph-sub">${p.desc}</div></div><div class="ph-count">${buckets[i].length} 件</div></div>
+    <div class="pattern-body">${buckets[i].length===0?'<div class="empty-msg">該当するデータはありません</div>':buildTable(buckets[i],p.showDate)}</div></div>`).join('');
+  const r=document.getElementById('results'); r.classList.add('visible'); r.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function buildTable(rows, showDate) {
+  const cols=['顧客番号','案件名','提供ツール','kintoneステータス','シミュレーション結果','直近7日'];
+  if(showDate) cols.push('初成果日');
+  const head=cols.map(c=>`<th>${c}</th>`).join('');
+  const body=rows.map(r=>{
+    const kLabel=r.kintone===''?'（空白）':r.kintone;
+    const tcMap={'モノ':'background:#fff0d6;color:#e07b00','チェキ':'background:#e6f4ea;color:#1a8e3e','GMO':'background:#e8f0fe;color:#1a73e8'};
+    const tc=tcMap[r.提供ツール]||'background:#f5f5f5;color:#666';
+    const chip=`<span style="${tc};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${esc(r.提供ツール)}</span>`;
+    return `<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${chip}</td><td>${kLabel}</td><td>${r.simStatus}</td><td>${renderLast7(r.last7)}</td>${showDate?`<td>${r.firstDate?`<span class="date-val">${fmtDate(r.firstDate)}</span>`:'<span style="color:#aaa">-</span>'}</td>`:''}</tr>`;
+  }).join('');
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+function renderLast7(days) {
+  if(!days||!days.length) return '<span style="color:#aaa;font-size:12px">データなし</span>';
+  return '<div class="day-icons-row">'+days.map(d=>`<div class="day-icon-cell" title="${d.date} ${d.win?'勝ち':'負け'}"><span class="di-icon">${d.win?'✅':'❌'}</span><span class="di-label">${d.date}</span></div>`).join('')+'</div>';
+}
+function fmtDate(d) {
+  if(!d) return '';
+  const s=String(d).trim();
+  if(s.includes('/')) { const p=s.split('/'); return parseInt(p[0])+'/'+parseInt(p[1]); }
+  const jv=document.getElementById('judgeDate').value;
+  return (jv?parseInt(jv.split('-')[1]):'')+'/'+parseInt(s);
+}
+function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
