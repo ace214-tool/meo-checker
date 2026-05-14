@@ -26,7 +26,7 @@ header p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
   margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 .drop-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px;
 }
 .drop-slot {
   display: flex; border-radius: 10px; overflow: hidden; cursor: pointer;
@@ -104,6 +104,68 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
 .p1-color { color: #e07b00; } .p3-color { color: #0b47a1; } .p4-color { color: #b3120f; }
 .p1-bg { background: #e07b00; } .p3-bg { background: #0b47a1; } .p4-bg { background: #b3120f; }
 
+.kintone-zone {
+  background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.kintone-btn {
+  background: linear-gradient(135deg, #ea4335, #b3120f); color: white; border: none;
+  padding: 10px 22px; border-radius: 8px; font-size: 14px; font-weight: 700;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(234,67,53,0.3); white-space: nowrap;
+}
+.kintone-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(234,67,53,0.4); }
+.kintone-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; }
+.kintone-status { font-size: 13px; color: #666; }
+.csv-fallback {
+  width: 100%; border-top: 1px dashed #e8eaed; padding-top: 12px; margin-top: 8px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.cf-label { font-size: 12px; color: #888; white-space: nowrap; font-weight: 600; }
+.cf-slot {
+  flex: 1; min-width: 200px; padding: 10px 14px;
+  border: 1.5px dashed #c5d3e8; border-radius: 6px; background: #fafbfc; cursor: pointer;
+  font-size: 12px; color: #888; transition: all 0.2s; text-align: center;
+}
+.cf-slot:hover, .cf-slot.drag-over { border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; }
+.cf-slot.loaded { border-style: solid; border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; }
+
+.kintone-summary {
+  background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  display: none; gap: 24px; align-items: center; flex-wrap: wrap;
+}
+.kintone-summary.visible { display: flex; }
+.ks-item { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.ks-label { color: #666; font-weight: 600; }
+.ks-value { font-size: 20px; font-weight: 800; color: #333; }
+.ks-rate { font-size: 12px; color: #999; margin-left: 2px; }
+.ks-badge { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: white; }
+.ks-badge.maru { background: #1a73e8; }
+.ks-badge.sankaku { background: #f6a623; }
+.ks-badge.blank { background: #999; }
+.ks-condition {
+  width: 100%; font-size: 11px; color: #888; margin-top: 4px;
+  border-top: 1px dashed #e8eaed; padding-top: 8px; line-height: 1.7;
+}
+.ks-condition .ks-cond-label { color: #555; font-weight: 700; margin-right: 2px; }
+
+.download-area {
+  background: white; border-radius: 12px; padding: 18px 24px; margin-top: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  display: none; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.download-area.visible { display: flex; }
+.download-btn {
+  background: linear-gradient(135deg, #34a853, #1e7e34); color: white; border: none;
+  padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 700;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(52,168,83,0.3);
+}
+.download-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(52,168,83,0.4); }
+.download-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; }
+.download-note { font-size: 12px; color: #888; flex: 1; min-width: 200px; }
+.download-count { font-size: 14px; font-weight: 700; color: #34a853; }
+
 @media (max-width: 700px) { .drop-grid { grid-template-columns: 1fr; } .summary-bar { gap: 12px; } }
 </style>
 </head>
@@ -111,50 +173,7 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
 <div class="container">
   <header>
     <h1>MEO継続課金ステータス照合ツール</h1>
-    <p>各スロットにCSVをドロップ → 全ファイル揃うと自動照合</p>
   </header>
-
-  <div class="upload-card">
-    <div class="drop-grid">
-      <div class="drop-slot" data-slot="meo" id="dropSlot-meo">
-        <input type="file" accept=".csv" style="display:none" id="fileInput-meo">
-        <div class="ds-color" style="background:#ea4335"></div>
-        <div class="ds-body">
-          <div class="ds-label" style="color:#ea4335">MEO案件管理</div>
-          <div class="ds-hint">MEO案件管理_xxx.csv</div>
-          <div class="ds-status" id="fname-meo">⬜ 未読み込み</div>
-        </div>
-      </div>
-      <div class="drop-slot" data-slot="tool" id="dropSlot-tool">
-        <input type="file" accept=".csv" style="display:none" id="fileInput-tool">
-        <div class="ds-color" style="background:#e07b00"></div>
-        <div class="ds-body">
-          <div class="ds-label" style="color:#e07b00">モノ</div>
-          <div class="ds-hint">report_days_xxx.csv</div>
-          <div class="ds-status" id="fname-tool">⬜ 未読み込み</div>
-        </div>
-      </div>
-      <div class="drop-slot" data-slot="cheki" id="dropSlot-cheki">
-        <input type="file" accept=".csv" style="display:none" id="fileInput-cheki">
-        <div class="ds-color" style="background:#34a853"></div>
-        <div class="ds-body">
-          <div class="ds-label" style="color:#34a853">チェキ</div>
-          <div class="ds-hint">MEO_google_xxx.csv</div>
-          <div class="ds-status" id="fname-cheki">⬜ 未読み込み</div>
-        </div>
-      </div>
-      <div class="drop-slot" data-slot="gmo" id="dropSlot-gmo">
-        <input type="file" accept=".csv" multiple style="display:none" id="fileInput-gmo">
-        <div class="ds-color" style="background:#1a73e8"></div>
-        <div class="ds-body">
-          <div class="ds-label" style="color:#1a73e8">GMO</div>
-          <div class="ds-hint">kwrank_google_xxx.csv（2ファイル）</div>
-          <div class="ds-status" id="fname-gmo">⬜ 未読み込み（0/2）</div>
-        </div>
-      </div>
-    </div>
-    <div class="auto-msg" id="autoMsg">✅ 全ファイル揃いました！自動照合を実行中...</div>
-  </div>
 
   <div class="date-card">
     <label for="judgeDate">📅 判定日</label>
@@ -163,18 +182,72 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
     <span class="date-note">この日付時点のデータでステータスをシミュレーションします</span>
   </div>
 
+  <div class="kintone-zone">
+    <button class="kintone-btn" id="kintoneBtn">🔄 ① MEO案件管理を最新取得</button>
+    <span class="kintone-status" id="kintoneStatus">kintoneから直接取得します</span>
+    <div class="csv-fallback">
+      <span class="cf-label">予備：</span>
+      <div class="cf-slot" id="dropSlot-meo">
+        <input type="file" accept=".csv" style="display:none" id="fileInput-meo">
+        <span id="fname-meo">📁 kintone標準CSV書き出しをドロップ or クリック</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="kintone-summary" id="kintoneSummary"></div>
+
+  <div class="upload-card">
+    <div class="drop-grid">
+      <div class="drop-slot" data-slot="tool" id="dropSlot-tool">
+        <input type="file" accept=".csv" style="display:none" id="fileInput-tool">
+        <div class="ds-color" style="background:#e07b00"></div>
+        <div class="ds-body">
+          <div class="ds-label" style="color:#e07b00">② モノ</div>
+          <div class="ds-hint">report_days_xxx.csv</div>
+          <div class="ds-status" id="fname-tool">⬜ 未読み込み</div>
+        </div>
+      </div>
+      <div class="drop-slot" data-slot="cheki" id="dropSlot-cheki">
+        <input type="file" accept=".csv" style="display:none" id="fileInput-cheki">
+        <div class="ds-color" style="background:#34a853"></div>
+        <div class="ds-body">
+          <div class="ds-label" style="color:#34a853">② チェキ</div>
+          <div class="ds-hint">MEO_google_xxx.csv</div>
+          <div class="ds-status" id="fname-cheki">⬜ 未読み込み</div>
+        </div>
+      </div>
+      <div class="drop-slot" data-slot="gmo" id="dropSlot-gmo">
+        <input type="file" accept=".csv" multiple style="display:none" id="fileInput-gmo">
+        <div class="ds-color" style="background:#1a73e8"></div>
+        <div class="ds-body">
+          <div class="ds-label" style="color:#1a73e8">② GMO</div>
+          <div class="ds-hint">kwrank_google_xxx.csv（2ファイル）</div>
+          <div class="ds-status" id="fname-gmo">⬜ 未読み込み（0/2）</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="btn-area">
-    <button class="btn-match" id="btnMatch" disabled onclick="runMatch()">照合する</button>
+    <button class="btn-match" id="btnMatch" disabled onclick="runMatch()">③ 照合する</button>
   </div>
 
   <div class="results" id="results">
     <div class="summary-bar" id="summaryBar"></div>
     <div id="patternResults"></div>
+    <div class="download-area" id="downloadArea">
+      <button class="download-btn" id="downloadBtn">📥 kintone更新用CSVをダウンロード</button>
+      <span class="download-count" id="downloadCount"></span>
+      <span class="download-note">レコード番号と新しい継続課金値の2列のCSV。kintoneのCSV読込でそのまま一括更新できます。</span>
+    </div>
   </div>
 </div>
 
 <script>
+const KINTONE_GAS_URL = 'https://script.google.com/macros/s/AKfycbymkQZK5BB9DKc1JwMBMhse016CHIeE0sG9gcRVPvnnwoXlmVtkKBlEpzjOM-sS2esD6w/exec';
+
 let meoData = null, toolData = null, chekiData = null, gmoData = null, gmoFiles = [];
+let lastBuckets = null;
 
 (function initDate() {
   const inp = document.getElementById('judgeDate');
@@ -265,7 +338,16 @@ function readAndStore(file, rule) {
   reader.readAsText(file, rule.encoding);
 }
 function storeData(key, fileName, data) {
-  if (key === 'meo') { meoData = data; markSlot('meo', fileName, data.length); }
+  if (key === 'meo') {
+    meoData = data;
+    document.getElementById('dropSlot-meo').classList.add('loaded');
+    document.getElementById('fname-meo').textContent = '✅ ' + fileName + '（' + data.length + '行）';
+    showKintoneSummary();
+    // レコード番号チェック
+    if (data.length > 0 && !('レコード番号' in data[0])) {
+      alert('⚠️ このCSVには「レコード番号」列がありません。\n更新CSVのダウンロードができません。\n\nkintone側で「アプリの設定 → CSV書き出し → 書き出す項目」で「レコード番号」を含めて出力してください。');
+    }
+  }
   else if (key === 'tool') { toolData = data; markSlot('tool', fileName, data.length); }
   else if (key === 'cheki') { chekiData = data; markSlot('cheki', fileName, data.length); }
   else if (key === 'gmo') {
@@ -292,12 +374,7 @@ function markSlotGmoFull(total) {
   document.getElementById('fname-gmo').textContent = '✅ 2/2 完了（計' + total + '行）';
 }
 function checkAutoRun() {
-  const allReady = meoData && toolData && chekiData && gmoData;
   updateBtnState();
-  if (allReady) {
-    document.getElementById('autoMsg').classList.add('visible');
-    setTimeout(() => runMatch(), 300);
-  }
 }
 function updateBtnState() {
   document.getElementById('btnMatch').disabled = !meoData || !(toolData || chekiData || gmoData);
@@ -413,6 +490,7 @@ function runMatch() {
       const buckets = [[],[],[]];
       for (const row of meoData) {
         const tool = (row['提供ツール']||'').trim(), custNum = (row['顧客番号']||'').trim();
+        const recordNum = (row['レコード番号']||'').trim();
         const kRaw = (row['継続課金']||'').trim();
         const isBlank = kRaw===''||kRaw==='×'||kRaw.toLowerCase()==='x';
         let sim=null, days=[];
@@ -421,12 +499,14 @@ function runMatch() {
         else if (tool==='GMO') { if(!gmoSimMap[custNum]) continue; sim=gmoSimMap[custNum]; days=gmoUD[custNum]||[]; }
         else continue;
         const simSt=sim.status;
-        const entry = { 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, kintone:isBlank?'':kRaw, simStatus:simSt, firstDate:sim.firstSuccessDate||'', last7:days.slice(-7) };
+        const entry = { レコード番号:recordNum, 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, kintone:isBlank?'':kRaw, simStatus:simSt, firstDate:sim.firstSuccessDate||'', last7:days.slice(-7) };
         if (isBlank && (simSt==='▲'||simSt==='〇')) buckets[0].push(entry);
         else if (kRaw==='▲' && simSt==='〇') buckets[1].push(entry);
         else if (kRaw==='〇' && simSt==='▲') buckets[2].push(entry);
       }
+      lastBuckets = buckets;
       renderResults(buckets, cutoffYMD);
+      showDownloadArea(buckets);
     } catch(err) { alert('照合エラー: '+err.message); }
     finally { updateBtnState(); btn.textContent='照合する'; }
   }, 20);
@@ -476,6 +556,97 @@ function fmtDate(d) {
   return (jv?parseInt(jv.split('-')[1]):'')+'/'+parseInt(s);
 }
 function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// ─── kintone最新取得 ──────────────────────────────
+document.getElementById('kintoneBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('kintoneBtn');
+  const status = document.getElementById('kintoneStatus');
+  btn.disabled = true;
+  status.textContent = '読み込み中...';
+  document.getElementById('kintoneSummary').classList.remove('visible');
+  try {
+    const res = await fetch(KINTONE_GAS_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const csv = await res.text();
+    if (csv.startsWith('Error:')) throw new Error(csv);
+    meoData = parseCSV(csv);
+    const now = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    status.textContent = '✅ ' + now + ' 取得完了';
+    showKintoneSummary();
+    updateBtnState();
+    checkAutoRun();
+  } catch (err) {
+    status.textContent = '❌ ' + err.message;
+    alert('kintone取得失敗：\n' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function showKintoneSummary() {
+  if (!meoData) return;
+  const total = meoData.length;
+  let maru = 0, sankaku = 0, blank = 0;
+  for (const row of meoData) {
+    const v = (row['継続課金']||'').trim();
+    if (v === '〇') maru++;
+    else if (v === '▲') sankaku++;
+    else blank++;
+  }
+  const maruRate = total > 0 ? (maru / total * 100).toFixed(1) : '0.0';
+  const sankakuRate = total > 0 ? (sankaku / total * 100).toFixed(1) : '0.0';
+  const blankRate = total > 0 ? (blank / total * 100).toFixed(1) : '0.0';
+  document.getElementById('kintoneSummary').innerHTML =
+    '<div class="ks-item"><span class="ks-label">取得件数</span><span class="ks-value">' + total + '</span><span class="ks-rate">件</span></div>' +
+    '<div class="ks-item"><span class="ks-badge maru">〇</span><span class="ks-value">' + maru + '</span><span class="ks-rate">件（' + maruRate + '%）</span></div>' +
+    '<div class="ks-item"><span class="ks-badge sankaku">▲</span><span class="ks-value">' + sankaku + '</span><span class="ks-rate">件（' + sankakuRate + '%）</span></div>' +
+    '<div class="ks-item"><span class="ks-badge blank">空</span><span class="ks-value">' + blank + '</span><span class="ks-rate">件（' + blankRate + '%）</span></div>' +
+    '<div class="ks-condition">' +
+    '<span class="ks-cond-label">契約プラン：</span>成果報酬3位以内（「その他」UL2017系列含む）　／　' +
+    '<span class="ks-cond-label">ステータス：</span>施策中・施策中(要対応)・施策中(HP課金中)' +
+    '</div>';
+  document.getElementById('kintoneSummary').classList.add('visible');
+}
+
+// ─── 更新CSV生成・ダウンロード ──────────────────────────────
+function showDownloadArea(buckets) {
+  const total = buckets[0].length + buckets[1].length + buckets[2].length;
+  const area = document.getElementById('downloadArea');
+  const cnt = document.getElementById('downloadCount');
+  if (total === 0) {
+    area.classList.remove('visible');
+    return;
+  }
+  cnt.textContent = '変更対象：' + total + '件';
+  area.classList.add('visible');
+}
+
+function generateUpdateCSV(buckets) {
+  const lines = ['レコード番号,継続課金'];
+  for (const e of buckets[0]) { if (e.レコード番号) lines.push(e.レコード番号 + ',' + e.simStatus); }
+  for (const e of buckets[1]) { if (e.レコード番号) lines.push(e.レコード番号 + ',〇'); }
+  for (const e of buckets[2]) { if (e.レコード番号) lines.push(e.レコード番号 + ',▲'); }
+  return lines.join('\n');
+}
+
+function downloadCSV(csv, filename) {
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  if (!lastBuckets) return;
+  const csv = generateUpdateCSV(lastBuckets);
+  const ymd = (document.getElementById('judgeDate').value || '').replace(/-/g, '');
+  downloadCSV(csv, 'kintone_update_' + ymd + '.csv');
+});
+
 </script>
 </body>
 </html>
