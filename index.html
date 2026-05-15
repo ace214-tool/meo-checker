@@ -175,13 +175,6 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
     <h1>MEO継続課金ステータス照合ツール</h1>
   </header>
 
-  <div class="date-card">
-    <label for="judgeDate">📅 判定日</label>
-    <input type="date" id="judgeDate" class="date-input">
-    <span class="date-tag" id="dateTag"></span>
-    <span class="date-note">この日付時点のデータでステータスをシミュレーションします</span>
-  </div>
-
   <div class="kintone-zone">
     <button class="kintone-btn" id="kintoneBtn">🔄 ① MEO案件管理を最新取得</button>
     <span class="kintone-status" id="kintoneStatus">kintoneから直接取得します</span>
@@ -226,6 +219,13 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
         </div>
       </div>
     </div>
+  </div>
+
+  <div class="date-card">
+    <label for="judgeDate">📅 判定日</label>
+    <input type="date" id="judgeDate" class="date-input">
+    <span class="date-tag" id="dateTag"></span>
+    <span class="date-note">この日付時点のデータでステータスをシミュレーションします</span>
   </div>
 
   <div class="btn-area">
@@ -397,7 +397,8 @@ function buildMonoDailyResults(toolRows, cutoffYMD) {
   for (const [uid, rows] of Object.entries(byUser)) {
     result[uid] = dateCols.map(col => {
       const ranks = rows.map(r => { const n = parseInt((r[col]||'').trim()); return isNaN(n)?null:n; }).filter(n=>n!==null);
-      return { date: col, win: ranks.some(n => n>=1 && n<=3) };
+      const padded = col.split('/').map(s => s.padStart(2, '0')).join('/');
+      return { date: padded, win: ranks.some(n => n>=1 && n<=3) };
     });
   }
   return result;
@@ -418,6 +419,8 @@ function simulateMono(dailyResults) {
 // ================================================================
 function buildChekiDailyResults(chekiRows, cutoffDay) {
   const result = {};
+  const jv = document.getElementById('judgeDate').value;
+  const monthStr = jv ? jv.split('-')[1] : String(new Date().getMonth()+1).padStart(2,'0');
   for (const row of chekiRows) {
     const m = (row['施設名']||'').trim().match(/_([A-Z]{2}\d[\w\-]*)$/);
     if (!m) continue;
@@ -426,7 +429,7 @@ function buildChekiDailyResults(chekiRows, cutoffDay) {
       if (cutoffDay && d > cutoffDay) break;
       const v = (row[String(d)]||'').trim();
       if (v === '') continue;
-      days.push({ date: String(d), win: v==='◯'||v==='○' });
+      days.push({ date: monthStr + '/' + String(d).padStart(2,'0'), win: v==='◯'||v==='○' });
     }
     result[custId] = days;
   }
@@ -462,7 +465,7 @@ function buildGmoDailyResults(gmoRows, cutoffYMD) {
   for (const [custId, rows] of Object.entries(byStore)) {
     result[custId] = dateCols.map(col => {
       const ranks = rows.map(r => { const n = parseInt((r[col]||'').trim()); return isNaN(n)?null:n; }).filter(n=>n!==null);
-      return { date: col.slice(5).replace(/^0/,''), win: ranks.some(n => n>=1 && n<=3) };
+      return { date: col.slice(5), win: ranks.some(n => n>=1 && n<=3) };
     });
   }
   return result;
