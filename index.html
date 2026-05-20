@@ -93,6 +93,13 @@ tbody tr:hover { background: #f8f9fa; }
 tbody td { padding: 10px 14px; white-space: nowrap; }
 .date-val { color: #1a73e8; font-weight: 700; }
 .empty-msg { padding: 28px; text-align: center; color: #aaa; font-size: 13px; }
+.drop-slot-unified { padding: 32px 28px; cursor: pointer; }
+.drop-slot-unified.drag-over { background: #e8f0fe; border-color: #1a73e8; }
+.unified-status { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; font-size: 13px; }
+.us-item { padding: 6px 14px; border-radius: 8px; background: #f5f5f5; color: #888; font-weight: 600; white-space: nowrap; }
+.us-item.loaded { background: #e6f4ea; color: #1a8e3e; }
+.us-item.partial { background: #fef7e0; color: #b06000; }
+
 .day-icons-row { display: flex; gap: 3px; align-items: center; }
 .day-icon-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .day-icon-cell .di-label { font-size: 9px; color: #aaa; line-height: 1; }
@@ -151,11 +158,18 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
 .ks-condition .ks-cond-label { color: #555; font-weight: 700; margin-right: 2px; }
 
 .download-area {
-  background: white; border-radius: 12px; padding: 18px 24px; margin-top: 20px;
+  background: white; border-radius: 12px; padding: 24px; margin-top: 20px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  display: none; align-items: center; gap: 16px; flex-wrap: wrap;
+  display: none; flex-direction: column; gap: 16px;
 }
 .download-area.visible { display: flex; }
+.dl-block { padding: 18px 20px; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #34a853; display: flex; flex-direction: column; gap: 8px; }
+.dl-block#dlBlock2 { border-left-color: #1a73e8; }
+.dl-block .download-btn { align-self: flex-start; }
+.dl-block#dlBlock2 .download-btn { background: linear-gradient(135deg, #1a73e8, #1557b0); box-shadow: 0 2px 8px rgba(26,115,232,0.3); }
+.dl-block#dlBlock2 .download-btn:hover { box-shadow: 0 4px 12px rgba(26,115,232,0.4); }
+.dl-block#dlBlock2 .download-count { color: #1a73e8; }
+.dl-note { font-size: 12px; color: #555; line-height: 1.7; margin-top: 4px; }
 .download-btn {
   background: linear-gradient(135deg, #34a853, #1e7e34); color: white; border: none;
   padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 700;
@@ -163,8 +177,7 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
 }
 .download-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(52,168,83,0.4); }
 .download-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; }
-.download-note { font-size: 12px; color: #888; flex: 1; min-width: 200px; }
-.download-count { font-size: 14px; font-weight: 700; color: #34a853; }
+.download-count { font-size: 14px; font-weight: 700; color: #34a853; display: inline-block; margin-left: 12px; }
 
 @media (max-width: 700px) { .drop-grid { grid-template-columns: 1fr; } .summary-bar { gap: 12px; } }
 </style>
@@ -190,32 +203,15 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
   <div class="kintone-summary" id="kintoneSummary"></div>
 
   <div class="upload-card">
-    <div class="drop-grid">
-      <div class="drop-slot" data-slot="tool" id="dropSlot-tool">
-        <input type="file" accept=".csv" style="display:none" id="fileInput-tool">
-        <div class="ds-color" style="background:#e07b00"></div>
-        <div class="ds-body">
-          <div class="ds-label" style="color:#e07b00">② モノ</div>
-          <div class="ds-hint">report_days_xxx.csv</div>
-          <div class="ds-status" id="fname-tool">⬜ 未読み込み</div>
-        </div>
-      </div>
-      <div class="drop-slot" data-slot="cheki" id="dropSlot-cheki">
-        <input type="file" accept=".csv" style="display:none" id="fileInput-cheki">
-        <div class="ds-color" style="background:#34a853"></div>
-        <div class="ds-body">
-          <div class="ds-label" style="color:#34a853">② チェキ</div>
-          <div class="ds-hint">MEO_google_xxx.csv</div>
-          <div class="ds-status" id="fname-cheki">⬜ 未読み込み</div>
-        </div>
-      </div>
-      <div class="drop-slot" data-slot="gmo" id="dropSlot-gmo">
-        <input type="file" accept=".csv" multiple style="display:none" id="fileInput-gmo">
-        <div class="ds-color" style="background:#1a73e8"></div>
-        <div class="ds-body">
-          <div class="ds-label" style="color:#1a73e8">② GMO</div>
-          <div class="ds-hint">kwrank_google_xxx.csv（2ファイル）</div>
-          <div class="ds-status" id="fname-gmo">⬜ 未読み込み（0/2）</div>
+    <div class="drop-slot drop-slot-unified" id="dropSlot-tools">
+      <input type="file" accept=".csv" multiple style="display:none" id="fileInput-tools">
+      <div class="ds-body" style="width:100%">
+        <div class="ds-label" style="color:#444;font-size:16px;font-weight:700">② ツールCSVをドロップ（モノ・チェキ・GMOいずれか1つでもOK）</div>
+        <div class="ds-hint" style="margin-top:4px">持っているファイルだけドロップすれば照合できます。ファイル名から自動振り分け。</div>
+        <div class="unified-status">
+          <span class="us-item" id="us-tool">⬜ モノ（任意）</span>
+          <span class="us-item" id="us-cheki">⬜ チェキ（任意）</span>
+          <span class="us-item" id="us-gmo">⬜ GMO（任意・2ファイル）</span>
         </div>
       </div>
     </div>
@@ -236,9 +232,22 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
     <div class="summary-bar" id="summaryBar"></div>
     <div id="patternResults"></div>
     <div class="download-area" id="downloadArea">
-      <button class="download-btn" id="downloadBtn">📥 kintone更新用CSVをダウンロード</button>
-      <span class="download-count" id="downloadCount"></span>
-      <span class="download-note">レコード番号と新しい継続課金値の2列のCSV。kintoneのCSV読込でそのまま一括更新できます。</span>
+      <div class="dl-block" id="dlBlock1">
+        <button class="download-btn" id="downloadBtn1">📥 ① 継続課金CSVをダウンロード</button>
+        <span class="download-count" id="downloadCount1"></span>
+        <div class="dl-note">
+          全変更行（空白→▲／〇・▲→〇・〇→▲）の継続課金フィールドを更新。<br>
+          <strong>kintoneインポート時に「継続課金」列のみマッピング</strong>してください。
+        </div>
+      </div>
+      <div class="dl-block" id="dlBlock2" style="display:none">
+        <button class="download-btn" id="downloadBtn2">📥 ② 課金開始日CSVをダウンロード</button>
+        <span class="download-count" id="downloadCount2"></span>
+        <div class="dl-note">
+          空白→▲／〇 の新規案件のみ。<strong>既存の課金開始日を保護</strong>するため別ファイル化。<br>
+          <strong>kintoneインポート時に「課金開始日」列のみマッピング</strong>してください。
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -301,17 +310,45 @@ function detectSlot(fileName) {
   return null;
 }
 
-// ─── 統合ドロップ（個別スロット対応）───────────────────────
-const SLOT_KEYS = ['meo','tool','cheki','gmo'];
-SLOT_KEYS.forEach(key => {
-  const slot = document.getElementById('dropSlot-' + key);
-  const inp = document.getElementById('fileInput-' + key);
+// ─── 統合ドロップ ───────────────────────────────────────
+// MEO案件管理スロット（既存・kintone fallback用）
+(function() {
+  const slot = document.getElementById('dropSlot-meo');
+  const inp = document.getElementById('fileInput-meo');
+  if (!slot) return;
   slot.addEventListener('click', () => inp.click());
-  inp.addEventListener('change', e => { handleSlotFiles(key, Array.from(e.target.files)); inp.value = ''; });
+  inp.addEventListener('change', e => { handleSlotFiles('meo', Array.from(e.target.files)); inp.value = ''; });
   slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
   slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
-  slot.addEventListener('drop', e => { e.preventDefault(); slot.classList.remove('drag-over'); handleSlotFiles(key, Array.from(e.dataTransfer.files)); });
-});
+  slot.addEventListener('drop', e => { e.preventDefault(); slot.classList.remove('drag-over'); handleSlotFiles('meo', Array.from(e.dataTransfer.files)); });
+})();
+
+// ツール統合スロット（モノ・チェキ・GMO）
+(function() {
+  const slot = document.getElementById('dropSlot-tools');
+  const inp = document.getElementById('fileInput-tools');
+  if (!slot) return;
+  slot.addEventListener('click', () => inp.click());
+  inp.addEventListener('change', e => { handleUnifiedFiles(Array.from(e.target.files)); inp.value = ''; });
+  slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
+  slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+  slot.addEventListener('drop', e => { e.preventDefault(); slot.classList.remove('drag-over'); handleUnifiedFiles(Array.from(e.dataTransfer.files)); });
+})();
+
+function handleUnifiedFiles(files) {
+  const unmatched = [];
+  for (const f of files) {
+    const rule = detectSlot(f.name);
+    if (!rule || rule.key === 'meo') {
+      unmatched.push(f.name);
+      continue;
+    }
+    readAndStore(f, rule);
+  }
+  if (unmatched.length > 0) {
+    alert('⚠️ ファイル名から判別できないため、以下は読み込めませんでした：\n\n' + unmatched.join('\n') + '\n\n対応ファイル名：\n・モノ：report_days_xxx.csv\n・チェキ：MEO_google_xxx.csv\n・GMO：kwrank_google_xxx.csv\n\n※MEO案件管理は上の「①」ボタンから取り込んでください');
+  }
+}
 
 function handleSlotFiles(slotKey, files) {
   for (const f of files) {
@@ -327,9 +364,15 @@ function handleSlotFiles(slotKey, files) {
   }
 }
 function readAndStore(file, rule) {
-  if (rule.key !== 'gmo') {
-    if (document.getElementById('dropSlot-' + rule.key).classList.contains('loaded')) return;
-  } else { if (gmoFiles.length >= 2) return; }
+  if (rule.key === 'meo') {
+    if (meoData) return;
+  } else if (rule.key === 'tool') {
+    if (toolData) return;
+  } else if (rule.key === 'cheki') {
+    if (chekiData) return;
+  } else if (rule.key === 'gmo') {
+    if (gmoFiles.length >= 2) return;
+  }
   const reader = new FileReader();
   reader.onload = e => {
     try { storeData(rule.key, file.name, parseCSV(e.target.result)); }
@@ -348,30 +391,26 @@ function storeData(key, fileName, data) {
       alert('⚠️ このCSVには「レコード番号」列がありません。\n更新CSVのダウンロードができません。\n\nkintone側で「アプリの設定 → CSV書き出し → 書き出す項目」で「レコード番号」を含めて出力してください。');
     }
   }
-  else if (key === 'tool') { toolData = data; markSlot('tool', fileName, data.length); }
-  else if (key === 'cheki') { chekiData = data; markSlot('cheki', fileName, data.length); }
+  else if (key === 'tool') { toolData = data; updateUnifiedStatus(); }
+  else if (key === 'cheki') { chekiData = data; updateUnifiedStatus(); }
   else if (key === 'gmo') {
     gmoFiles.push({ name: fileName, data });
-    if (gmoFiles.length === 1) { markSlotGmoHalf(fileName, data.length); }
-    else if (gmoFiles.length >= 2) {
+    if (gmoFiles.length >= 2) {
       gmoData = gmoFiles[0].data.concat(gmoFiles[1].data);
-      markSlotGmoFull(gmoData.length);
     }
+    updateUnifiedStatus();
   }
   checkAutoRun();
 }
-function markSlot(key, fileName, cnt) {
-  const s = document.getElementById('dropSlot-' + key);
-  s.classList.add('loaded');
-  document.getElementById('fname-' + key).textContent = '✅ ' + fileName + '（' + cnt + '行）';
-}
-function markSlotGmoHalf(fileName, cnt) {
-  document.getElementById('fname-gmo').textContent = '⏳ 1/2: ' + fileName + '（' + cnt + '行）';
-}
-function markSlotGmoFull(total) {
-  const s = document.getElementById('dropSlot-gmo');
-  s.classList.add('loaded');
-  document.getElementById('fname-gmo').textContent = '✅ 2/2 完了（計' + total + '行）';
+
+function updateUnifiedStatus() {
+  const elTool = document.getElementById('us-tool');
+  if (toolData) { elTool.className = 'us-item loaded'; elTool.textContent = '✅ モノ：' + toolData.length + '行'; }
+  const elCheki = document.getElementById('us-cheki');
+  if (chekiData) { elCheki.className = 'us-item loaded'; elCheki.textContent = '✅ チェキ：' + chekiData.length + '行'; }
+  const elGmo = document.getElementById('us-gmo');
+  if (gmoData) { elGmo.className = 'us-item loaded'; elGmo.textContent = '✅ GMO：' + gmoData.length + '行（2/2）'; }
+  else if (gmoFiles.length === 1) { elGmo.className = 'us-item partial'; elGmo.textContent = '⏳ GMO：' + gmoFiles[0].data.length + '行（1/2）'; }
 }
 function checkAutoRun() {
   updateBtnState();
@@ -614,21 +653,56 @@ function showKintoneSummary() {
 function showDownloadArea(buckets) {
   const total = buckets[0].length + buckets[1].length + buckets[2].length;
   const area = document.getElementById('downloadArea');
-  const cnt = document.getElementById('downloadCount');
   if (total === 0) {
     area.classList.remove('visible');
     return;
   }
-  cnt.textContent = '変更対象：' + total + '件';
+  // ① 継続課金CSV：全変更行
+  document.getElementById('downloadCount1').textContent = '変更対象：' + total + '件';
+
+  // ② 課金開始日CSV：buckets[0] のうち firstDate がある行のみ
+  const billingStartCount = buckets[0].filter(e => e.レコード番号 && e.firstDate).length;
+  const block2 = document.getElementById('dlBlock2');
+  if (billingStartCount > 0) {
+    block2.style.display = '';
+    document.getElementById('downloadCount2').textContent = '更新対象：' + billingStartCount + '件';
+  } else {
+    block2.style.display = 'none';
+  }
   area.classList.add('visible');
 }
 
-function generateUpdateCSV(buckets) {
+function generateContinuationCSV(buckets) {
   const lines = ['レコード番号,継続課金'];
-  for (const e of buckets[0]) { if (e.レコード番号) lines.push(e.レコード番号 + ',' + e.simStatus); }
-  for (const e of buckets[1]) { if (e.レコード番号) lines.push(e.レコード番号 + ',〇'); }
-  for (const e of buckets[2]) { if (e.レコード番号) lines.push(e.レコード番号 + ',▲'); }
+  for (const e of buckets[0]) {
+    if (e.レコード番号) lines.push(e.レコード番号 + ',' + e.simStatus);
+  }
+  for (const e of buckets[1]) {
+    if (e.レコード番号) lines.push(e.レコード番号 + ',〇');
+  }
+  for (const e of buckets[2]) {
+    if (e.レコード番号) lines.push(e.レコード番号 + ',▲');
+  }
   return lines.join('\n');
+}
+
+function generateBillingStartCSV(buckets) {
+  const jv = document.getElementById('judgeDate').value;
+  const year = jv ? jv.split('-')[0] : String(new Date().getFullYear());
+  const toYMD = (md) => {
+    if (!md) return '';
+    const parts = md.split('/');
+    if (parts.length !== 2) return '';
+    return year + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
+  };
+  const lines = ['レコード番号,課金開始日'];
+  // 空白→▲／〇 で firstDate がある行のみ抽出
+  for (const e of buckets[0]) {
+    if (e.レコード番号 && e.firstDate) {
+      lines.push(e.レコード番号 + ',' + toYMD(e.firstDate));
+    }
+  }
+  return lines.length > 1 ? lines.join('\n') : null;
 }
 
 function downloadCSV(csv, filename) {
@@ -643,11 +717,22 @@ function downloadCSV(csv, filename) {
   URL.revokeObjectURL(url);
 }
 
-document.getElementById('downloadBtn').addEventListener('click', () => {
+document.getElementById('downloadBtn1').addEventListener('click', () => {
   if (!lastBuckets) return;
-  const csv = generateUpdateCSV(lastBuckets);
   const ymd = (document.getElementById('judgeDate').value || '').replace(/-/g, '');
-  downloadCSV(csv, 'kintone_update_' + ymd + '.csv');
+  const csv = generateContinuationCSV(lastBuckets);
+  downloadCSV(csv, 'kintone_update_継続課金_' + ymd + '.csv');
+});
+
+document.getElementById('downloadBtn2').addEventListener('click', () => {
+  if (!lastBuckets) return;
+  const ymd = (document.getElementById('judgeDate').value || '').replace(/-/g, '');
+  const csv = generateBillingStartCSV(lastBuckets);
+  if (!csv) {
+    alert('課金開始日を更新する対象がありません。');
+    return;
+  }
+  downloadCSV(csv, 'kintone_update_課金開始日_' + ymd + '.csv');
 });
 
 </script>
