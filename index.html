@@ -442,8 +442,9 @@ function buildMonoDailyResults(toolRows, cutoffYMD) {
   }
   return result;
 }
-function simulateMono(dailyResults) {
-  let status = '×', firstSuccessDate = null;
+function simulateMono(dailyResults, initialStatus) {
+  let status = initialStatus || '×';
+  let firstSuccessDate = null;
   for (let i = 0; i < dailyResults.length; i++) {
     const { date, win } = dailyResults[i];
     if (status === '×') { if (win) { status = '▲'; firstSuccessDate = date; } }
@@ -474,8 +475,9 @@ function buildChekiDailyResults(chekiRows, cutoffDay) {
   }
   return result;
 }
-function simulateCheki(dailyResults) {
-  let status = '×', firstSuccessDate = null;
+function simulateCheki(dailyResults, initialStatus) {
+  let status = initialStatus || '×';
+  let firstSuccessDate = null;
   for (let i = 0; i < dailyResults.length; i++) {
     const { date, win } = dailyResults[i];
     if (status === '×') { if (win) { status = '▲'; firstSuccessDate = date; } }
@@ -509,6 +511,17 @@ function buildGmoDailyResults(gmoRows, cutoffYMD) {
   }
   return result;
 }
+// kintoneの「継続課金」現在値を判定の初期statusとして取り出す
+function getInitialStatusFromKintone(meoData, custId) {
+  if (!meoData || !custId) return '×';
+  const row = meoData.find(r => (r['顧客番号']||'').trim() === custId);
+  if (!row) return '×';
+  const v = (row['継続課金']||'').trim();
+  if (v === '○' || v === '◯' || v === '〇') return '〇';
+  if (v === '▲') return '▲';
+  return '×'; // 空白・その他は × として扱う
+}
+
 const simulateGmo = simulateCheki;
 
 // ================================================================
@@ -523,11 +536,11 @@ function runMatch() {
       const cutoffYMD = document.getElementById('judgeDate').value;
       const cutoffDay = cutoffYMD ? parseInt(cutoffYMD.split('-')[2]) : null;
       let monoSimMap={}, monoUD={};
-      if (toolData) { monoUD = buildMonoDailyResults(toolData, cutoffYMD); for (const [u,d] of Object.entries(monoUD)) monoSimMap[u] = simulateMono(d); }
+      if (toolData) { monoUD = buildMonoDailyResults(toolData, cutoffYMD); for (const [u,d] of Object.entries(monoUD)) monoSimMap[u] = simulateMono(d, getInitialStatusFromKintone(meoData, u)); }
       let chekiSimMap={}, chekiUD={};
-      if (chekiData) { chekiUD = buildChekiDailyResults(chekiData, cutoffDay); for (const [c,d] of Object.entries(chekiUD)) chekiSimMap[c] = simulateCheki(d); }
+      if (chekiData) { chekiUD = buildChekiDailyResults(chekiData, cutoffDay); for (const [c,d] of Object.entries(chekiUD)) chekiSimMap[c] = simulateCheki(d, getInitialStatusFromKintone(meoData, c)); }
       let gmoSimMap={}, gmoUD={};
-      if (gmoData) { gmoUD = buildGmoDailyResults(gmoData, cutoffYMD); for (const [c,d] of Object.entries(gmoUD)) gmoSimMap[c] = simulateGmo(d); }
+      if (gmoData) { gmoUD = buildGmoDailyResults(gmoData, cutoffYMD); for (const [c,d] of Object.entries(gmoUD)) gmoSimMap[c] = simulateGmo(d, getInitialStatusFromKintone(meoData, c)); }
 
       const buckets = [[],[],[]];
       for (const row of meoData) {
