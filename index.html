@@ -256,6 +256,7 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
 const KINTONE_GAS_URL = 'https://script.google.com/macros/s/AKfycbymkQZK5BB9DKc1JwMBMhse016CHIeE0sG9gcRVPvnnwoXlmVtkKBlEpzjOM-sS2esD6w/exec';
 
 let meoData = null, toolData = null, chekiData = null, gmoData = null, gmoFiles = [];
+let chekiCsvYear = null, chekiCsvMonth = null; // チェキCSVファイル名から抽出した年月
 let lastBuckets = null;
 
 (function initDate() {
@@ -392,7 +393,19 @@ function storeData(key, fileName, data) {
     }
   }
   else if (key === 'tool') { toolData = data; updateUnifiedStatus(); }
-  else if (key === 'cheki') { chekiData = data; updateUnifiedStatus(); }
+  else if (key === 'cheki') {
+    chekiData = data;
+    // ファイル名から「YYYY-MM-DD_YYYY-MM-DD」パターンの年月を抽出
+    const m = fileName.match(/_(\d{4})-(\d{2})-\d{2}_/);
+    if (m) {
+      chekiCsvYear = m[1];
+      chekiCsvMonth = m[2];
+    } else {
+      chekiCsvYear = null;
+      chekiCsvMonth = null;
+    }
+    updateUnifiedStatus();
+  }
   else if (key === 'gmo') {
     gmoFiles.push({ name: fileName, data });
     if (gmoFiles.length >= 2) {
@@ -407,7 +420,21 @@ function updateUnifiedStatus() {
   const elTool = document.getElementById('us-tool');
   if (toolData) { elTool.className = 'us-item loaded'; elTool.textContent = '✅ モノ：' + toolData.length + '行'; }
   const elCheki = document.getElementById('us-cheki');
-  if (chekiData) { elCheki.className = 'us-item loaded'; elCheki.textContent = '✅ チェキ：' + chekiData.length + '行'; }
+  if (chekiData) {
+    let label = '✅ チェキ：' + chekiData.length + '行';
+    const jv = document.getElementById('judgeDate').value;
+    const jvMonth = jv ? jv.split('-')[1] : null;
+    if (chekiCsvMonth && jvMonth && jvMonth !== chekiCsvMonth) {
+      label += ' ⚠️' + chekiCsvYear + '/' + chekiCsvMonth + '月';
+      elCheki.className = 'us-item partial';
+    } else if (chekiCsvMonth) {
+      label += '（' + chekiCsvYear + '/' + chekiCsvMonth + '月）';
+      elCheki.className = 'us-item loaded';
+    } else {
+      elCheki.className = 'us-item loaded';
+    }
+    elCheki.textContent = label;
+  }
   const elGmo = document.getElementById('us-gmo');
   if (gmoData) { elGmo.className = 'us-item loaded'; elGmo.textContent = '✅ GMO：' + gmoData.length + '行（2/2）'; }
   else if (gmoFiles.length === 1) { elGmo.className = 'us-item partial'; elGmo.textContent = '⏳ GMO：' + gmoFiles[0].data.length + '行（1/2）'; }
@@ -460,13 +487,28 @@ function simulateMono(dailyResults, initialStatus) {
 function buildChekiDailyResults(chekiRows, cutoffDay) {
   const result = {};
   const jv = document.getElementById('judgeDate').value;
-  const monthStr = jv ? jv.split('-')[1] : String(new Date().getMonth()+1).padStart(2,'0');
+  const jvMonth = jv ? jv.split('-')[1] : null;
+
+  // 月情報の優先順位：CSVファイル名 > judgeDate > 現在月
+  let monthStr;
+  if (chekiCsvMonth) {
+    monthStr = chekiCsvMonth;
+  } else if (jvMonth) {
+    monthStr = jvMonth;
+  } else {
+    monthStr = String(new Date().getMonth()+1).padStart(2,'0');
+  }
+
+  // cutoffDayはCSVの月とjudgeDateの月が一致するときだけ適用
+  // 月が違う場合（過去月のCSV）は全日採用
+  const useCutoff = chekiCsvMonth && jvMonth ? chekiCsvMonth === jvMonth : true;
+
   for (const row of chekiRows) {
     const m = (row['施設名']||'').trim().match(/_([A-Z]{2}\d[\w\-]*)$/);
     if (!m) continue;
     const custId = m[1].trim(), days = [];
     for (let d=1; d<=31; d++) {
-      if (cutoffDay && d > cutoffDay) break;
+      if (useCutoff && cutoffDay && d > cutoffDay) break;
       const v = (row[String(d)]||'').trim();
       if (v === '') continue;
       days.push({ date: monthStr + '/' + String(d).padStart(2,'0'), win: v==='◯'||v==='○' });
@@ -511,15 +553,24 @@ function buildGmoDailyResults(gmoRows, cutoffYMD) {
   }
   return result;
 }
+// 〇▲×の文字コード違いを吸収する正規化関数
+function normalizeStatus(v) {
+  if (!v) return '';
+  const t = String(v).trim();
+  if (t === '○' || t === '◯' || t === '〇') return '〇';
+  if (t === '▲') return '▲';
+  if (t === '×' || t.toLowerCase() === 'x') return '×';
+  return t;
+}
+
 // kintoneの「継続課金」現在値を判定の初期statusとして取り出す
 function getInitialStatusFromKintone(meoData, custId) {
   if (!meoData || !custId) return '×';
   const row = meoData.find(r => (r['顧客番号']||'').trim() === custId);
   if (!row) return '×';
-  const v = (row['継続課金']||'').trim();
-  if (v === '○' || v === '◯' || v === '〇') return '〇';
-  if (v === '▲') return '▲';
-  return '×'; // 空白・その他は × として扱う
+  const n = normalizeStatus(row['継続課金']);
+  if (n === '〇' || n === '▲') return n;
+  return '×'; // 空白・×・その他は × として扱う
 }
 
 const simulateGmo = simulateCheki;
@@ -546,8 +597,8 @@ function runMatch() {
       for (const row of meoData) {
         const tool = (row['提供ツール']||'').trim(), custNum = (row['顧客番号']||'').trim();
         const recordNum = (row['レコード番号']||'').trim();
-        const kRaw = (row['継続課金']||'').trim();
-        const isBlank = kRaw===''||kRaw==='×'||kRaw.toLowerCase()==='x';
+        const kRaw = normalizeStatus(row['継続課金']);
+        const isBlank = kRaw===''||kRaw==='×';
         let sim=null, days=[];
         if (tool==='モノ') { const uid=(row['モノ顧客番号']||'').trim(); if(!uid||!monoSimMap[uid]) continue; sim=monoSimMap[uid]; days=monoUD[uid]||[]; }
         else if (tool==='チェキ') { if(!chekiSimMap[custNum]) continue; sim=chekiSimMap[custNum]; days=chekiUD[custNum]||[]; }
