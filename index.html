@@ -564,9 +564,11 @@ function normalizeStatus(v) {
 }
 
 // kintoneの「継続課金」現在値を判定の初期statusとして取り出す
-function getInitialStatusFromKintone(meoData, custId) {
-  if (!meoData || !custId) return '×';
-  const row = meoData.find(r => (r['顧客番号']||'').trim() === custId);
+// keyField: 検索に使うフィールド名（'顧客番号'=デフォルト、'モノ顧客番号'=モノ用など）
+function getInitialStatusFromKintone(meoData, id, keyField) {
+  if (!meoData || !id) return '×';
+  const key = keyField || '顧客番号';
+  const row = meoData.find(r => (r[key]||'').trim() === id);
   if (!row) return '×';
   const n = normalizeStatus(row['継続課金']);
   if (n === '〇' || n === '▲') return n;
@@ -587,11 +589,11 @@ function runMatch() {
       const cutoffYMD = document.getElementById('judgeDate').value;
       const cutoffDay = cutoffYMD ? parseInt(cutoffYMD.split('-')[2]) : null;
       let monoSimMap={}, monoUD={};
-      if (toolData) { monoUD = buildMonoDailyResults(toolData, cutoffYMD); for (const [u,d] of Object.entries(monoUD)) monoSimMap[u] = simulateMono(d, getInitialStatusFromKintone(meoData, u)); }
+      if (toolData) { monoUD = buildMonoDailyResults(toolData, cutoffYMD); for (const [u,d] of Object.entries(monoUD)) monoSimMap[u] = simulateMono(d, getInitialStatusFromKintone(meoData, u, 'モノ顧客番号')); }
       let chekiSimMap={}, chekiUD={};
-      if (chekiData) { chekiUD = buildChekiDailyResults(chekiData, cutoffDay); for (const [c,d] of Object.entries(chekiUD)) chekiSimMap[c] = simulateCheki(d, getInitialStatusFromKintone(meoData, c)); }
+      if (chekiData) { chekiUD = buildChekiDailyResults(chekiData, cutoffDay); for (const [c,d] of Object.entries(chekiUD)) chekiSimMap[c] = simulateCheki(d, getInitialStatusFromKintone(meoData, c, '顧客番号')); }
       let gmoSimMap={}, gmoUD={};
-      if (gmoData) { gmoUD = buildGmoDailyResults(gmoData, cutoffYMD); for (const [c,d] of Object.entries(gmoUD)) gmoSimMap[c] = simulateGmo(d, getInitialStatusFromKintone(meoData, c)); }
+      if (gmoData) { gmoUD = buildGmoDailyResults(gmoData, cutoffYMD); for (const [c,d] of Object.entries(gmoUD)) gmoSimMap[c] = simulateGmo(d, getInitialStatusFromKintone(meoData, c, '顧客番号')); }
 
       const buckets = [[],[],[]];
       for (const row of meoData) {
