@@ -247,12 +247,22 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
     <div id="patternResults"></div>
     </div>
     <div class="download-area" id="downloadArea">
-      <div class="dl-block" id="dlBlock1">
+      <div class="dl-block" id="dlBlock0">
+        <button class="download-btn" id="downloadBtn0">📥 kintone更新CSVをダウンロード（継続課金＋課金開始日）</button>
+        <span class="download-count" id="downloadCount0"></span>
+        <div class="dl-note" id="dlNote0">
+          全変更行（空白→▲／〇・▲→〇・〇→▲）を1ファイルにまとめています。<br>
+          課金開始日は「空白→▲／〇」の行だけ初成果日を入れ、それ以外の行はkintoneの現在値をそのまま書き戻すので既存の日付は消えません。<br>
+          <strong>kintoneインポート時は「レコード番号」をキーに「継続課金」「課金開始日」の2列をマッピング</strong>してください。
+        </div>
+      </div>
+      <div class="dl-block" id="dlBlock1" style="display:none">
         <button class="download-btn" id="downloadBtn1">📥 ① 継続課金CSVをダウンロード</button>
         <span class="download-count" id="downloadCount1"></span>
         <div class="dl-note">
           全変更行（空白→▲／〇・▲→〇・〇→▲）の継続課金フィールドを更新。<br>
-          <strong>kintoneインポート時に「継続課金」列のみマッピング</strong>してください。
+          <strong>kintoneインポート時に「継続課金」列のみマッピング</strong>してください。<br>
+          <span style="color:#b06000">※MEO案件管理データに「課金開始日」列が無いため2ファイルに分けています。GASの出力項目に「課金開始日」を追加すると1ファイルにまとまります。</span>
         </div>
       </div>
       <div class="dl-block" id="dlBlock2" style="display:none">
@@ -732,8 +742,27 @@ function showKintoneSummary() {
     '<div class="ks-condition">' +
     '<span class="ks-cond-label">契約プラン：</span>成果報酬3位以内（「その他」UL2017系列含む）　／　' +
     '<span class="ks-cond-label">ステータス：</span>施策中・施策中(要対応)・施策中(HP課金中)' +
-    '</div>';
+    '</div>' + buildFieldCheck();
   document.getElementById('kintoneSummary').classList.add('visible');
+}
+
+// 取得データに必要な列が揃っているかを表示（1ファイル化の可否を事前に判定）
+function buildFieldCheck() {
+  if (!meoData || !meoData.length) return '';
+  const headers = Object.keys(meoData[0]);
+  const need = ['レコード番号', '顧客番号', 'モノ顧客番号', '提供ツール', '継続課金', '課金開始日'];
+  const items = need.map(h => {
+    const ok = headers.includes(h);
+    let sample = '';
+    if (ok) { const r = meoData.find(x => (x[h]||'').trim() !== ''); if (r) sample = '（例：' + esc(r[h].trim().slice(0, 12)) + '）'; }
+    return '<span style="color:' + (ok ? '#1a8e3e' : '#d93025') + ';margin-right:10px;">' + (ok ? '✅' : '❌') + h + sample + '</span>';
+  }).join('');
+  const merged = headers.includes('課金開始日');
+  const verdict = merged
+    ? '<span style="color:#1a8e3e;font-weight:700;">→ 更新CSVは1ファイルにまとめて出力します</span>'
+    : '<span style="color:#d93025;font-weight:700;">→ 「課金開始日」列が無いため2ファイル出力になります。GASの取得項目に課金開始日を追加してください</span>' +
+      '<div style="color:#888;margin-top:2px;">取得できている列：' + esc(headers.join(' / ')) + '</div>';
+  return '<div class="ks-condition"><span class="ks-cond-label">取得列チェック：</span>' + items + '<div style="margin-top:4px;">' + verdict + '</div></div>';
 }
 
 // ─── 更新CSV生成・ダウンロード ──────────────────────────────
@@ -744,17 +773,16 @@ function showDownloadArea(buckets) {
     area.classList.remove('visible');
     return;
   }
-  // ① 継続課金CSV：全変更行
-  document.getElementById('downloadCount1').textContent = '変更対象：' + total + '件';
-
-  // ② 課金開始日CSV：buckets[0] のうち firstDate がある行のみ
   const billingStartCount = buckets[0].filter(e => e.レコード番号 && e.firstDate).length;
-  const block2 = document.getElementById('dlBlock2');
-  if (billingStartCount > 0) {
-    block2.style.display = '';
-    document.getElementById('downloadCount2').textContent = '更新対象：' + billingStartCount + '件';
+  const merged = hasBillingStartField();
+  document.getElementById('dlBlock0').style.display = merged ? '' : 'none';
+  document.getElementById('dlBlock1').style.display = merged ? 'none' : '';
+  document.getElementById('dlBlock2').style.display = (!merged && billingStartCount > 0) ? '' : 'none';
+  if (merged) {
+    document.getElementById('downloadCount0').textContent = '変更対象：' + total + '件（うち課金開始日の新規セット：' + billingStartCount + '件）';
   } else {
-    block2.style.display = 'none';
+    document.getElementById('downloadCount1').textContent = '変更対象：' + total + '件';
+    document.getElementById('downloadCount2').textContent = '更新対象：' + billingStartCount + '件';
   }
   area.classList.add('visible');
 }
@@ -770,6 +798,34 @@ function generateContinuationCSV(buckets) {
   for (const e of buckets[2]) {
     if (e.レコード番号) lines.push(e.レコード番号 + ',▲');
   }
+  return lines.join('\n');
+}
+
+// MEO案件管理データに「課金開始日」列があるか（あれば1ファイルにまとめられる）
+function hasBillingStartField() {
+  return !!(meoData && meoData.length && ('課金開始日' in meoData[0]));
+}
+function keyToDash(k) { // 'YYYY/MM/DD' → 'YYYY-MM-DD'
+  if (!k) return '';
+  const p = k.split('/');
+  return p.length === 3 ? p[0] + '-' + p[1].padStart(2,'0') + '-' + p[2].padStart(2,'0') : '';
+}
+// 継続課金＋課金開始日を1ファイルにまとめる
+// ・空白→▲／〇：kintoneの課金開始日が空なら初成果日をセット、既に入っていればそのまま
+// ・▲→〇／〇→▲：課金開始日はkintoneの現在値をそのまま書き戻す（消さない）
+function generateMergedCSV(buckets) {
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const lines = ['レコード番号,継続課金,課金開始日'];
+  const existing = rec => { const row = meoData.find(r => (r['レコード番号']||'').trim() === rec); return row ? (row['課金開始日']||'').trim() : ''; };
+  const push = (e, status) => {
+    if (!e.レコード番号) return;
+    let start = existing(e.レコード番号);
+    if (status === null && !start && e.firstDate) start = keyToDash(e.firstDate);
+    lines.push([e.レコード番号, status === null ? e.simStatus : status, start].map(q).join(','));
+  };
+  buckets[0].forEach(e => push(e, null));
+  buckets[1].forEach(e => push(e, '〇'));
+  buckets[2].forEach(e => push(e, '▲'));
   return lines.join('\n');
 }
 
@@ -801,6 +857,12 @@ function downloadCSV(csv, filename) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+document.getElementById('downloadBtn0').addEventListener('click', () => {
+  if (!lastBuckets) return;
+  const ymd = (document.getElementById('judgeDate').value || '').replace(/-/g, '');
+  downloadCSV(generateMergedCSV(lastBuckets), 'kintone_update_' + ymd + '.csv');
+});
 
 document.getElementById('downloadBtn1').addEventListener('click', () => {
   if (!lastBuckets) return;
