@@ -274,6 +274,7 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
         </div>
       </div>
     </div>
+    <div id="unmatchedResults"></div>
   </div>
 </div>
 
@@ -627,15 +628,28 @@ function runMatch() {
       if (chekiFiles.length) { chekiUD = buildChekiDailyResults(chekiFiles, cutoffYMD); for (const [c,d] of Object.entries(chekiUD)) chekiSimMap[c] = simulateCheki(d, getInitialStatusFromKintone(meoData, c, '顧客番号')); }
 
       const buckets = [[],[],[]];
+      const usedMono = {}, usedCheki = {};   // 判定に使ったCSV側ID（表A用）
+      const noData = [];                       // kintoneにあるがCSVに成績が無い案件（表B用）
       for (const row of meoData) {
         const tool = (row['提供ツール']||'').trim(), custNum = (row['顧客番号']||'').trim();
         const recordNum = (row['レコード番号']||'').trim();
         const kRaw = normalizeStatus(row['継続課金']);
         const isBlank = kRaw===''||kRaw==='×';
         let sim=null, days=[];
-        if (tool==='モノ') { const uid=(row['モノ顧客番号']||'').trim(); if(!uid||!monoSimMap[uid]) continue; sim=monoSimMap[uid]; days=monoUD[uid]||[]; }
-        else if (tool==='チェキ') { if(!chekiSimMap[custNum]) continue; sim=chekiSimMap[custNum]; days=chekiUD[custNum]||[]; }
-        else continue;
+        const noDataEntry = (reason) => ({ 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, kintone:isBlank?'':kRaw, モノ顧客番号:(row['モノ顧客番号']||'').trim(), reason });
+        if (tool==='モノ') {
+          const uid=(row['モノ顧客番号']||'').trim();
+          if(!uid) { noData.push(noDataEntry('モノ顧客番号が空欄')); continue; }
+          if(!toolFiles.length) continue; // モノCSV未投入なら判定対象外扱い（表Bには出さない）
+          if(!monoSimMap[uid]) { noData.push(noDataEntry('モノCSVに該当ユーザーIDなし')); continue; }
+          usedMono[uid]=true; sim=monoSimMap[uid]; days=monoUD[uid]||[];
+        }
+        else if (tool==='チェキ') {
+          if(!chekiFiles.length) continue;
+          if(!chekiSimMap[custNum]) { noData.push(noDataEntry('チェキCSVに該当顧客番号なし')); continue; }
+          usedCheki[custNum]=true; sim=chekiSimMap[custNum]; days=chekiUD[custNum]||[];
+        }
+        else { noData.push(noDataEntry(tool ? '提供ツールが「'+tool+'」（判定対象外）' : '提供ツールが空欄')); continue; }
         const simSt=sim.status;
         const entry = { レコード番号:recordNum, 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, kintone:isBlank?'':kRaw, simStatus:simSt, firstDate:sim.firstSuccessDate||'', last7:days.slice(-7) };
         if (isBlank && (simSt==='▲'||simSt==='〇')) buckets[0].push(entry);
@@ -645,6 +659,21 @@ function runMatch() {
       lastBuckets = buckets;
       renderResults(buckets, cutoffYMD);
       showDownloadArea(buckets);
+      // ── 判定対象外の洗い出し ──
+      // 表A：CSVにはあるがkintoneのどの施策中案件にも紐づかないID（初成果があるものだけ）
+      const monoNames = buildMonoNameMap(toolFiles), chekiNames = buildChekiNameMap(chekiFiles);
+      const orphan = [];
+      for (const [uid, d] of Object.entries(monoUD)) {
+        if (usedMono[uid]) continue;
+        const r = simulateStatus(d, '×'); if (!r.firstSuccessDate) continue;
+        orphan.push({ id:uid, name:(monoNames[uid]&&monoNames[uid].name)||'', state:(monoNames[uid]&&monoNames[uid].state)||'', tool:'モノ', firstDate:r.firstSuccessDate, last7:d.slice(-7) });
+      }
+      for (const [cid, d] of Object.entries(chekiUD)) {
+        if (usedCheki[cid]) continue;
+        const r = simulateStatus(d, '×'); if (!r.firstSuccessDate) continue;
+        orphan.push({ id:cid, name:chekiNames[cid]||'', state:'', tool:'チェキ', firstDate:r.firstSuccessDate, last7:d.slice(-7) });
+      }
+      renderUnmatched(orphan, noData);
     } catch(err) { alert('照合エラー: '+err.message); }
     finally { updateBtnState(); btn.textContent='照合する'; }
   }, 20);
@@ -695,6 +724,50 @@ function fmtDate(d) {
   return String(d);
 }
 function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ─── 判定対象外の一覧（表A・表B） ──────────────────────
+// モノCSV：ユーザーID → { ビジネス名, 状態 }
+function buildMonoNameMap(files) {
+  const m = {};
+  for (const f of files) for (const row of f.data) {
+    const uid = (row['ユーザーID']||'').trim(); if (!uid || m[uid]) continue;
+    m[uid] = { name:(row['ビジネス名']||'').trim(), state:(row['状態']||'').trim() };
+  }
+  return m;
+}
+// チェキCSV：顧客番号 → 施設名（末尾の「_UL〇〇〇〇」を除いたもの）
+function buildChekiNameMap(files) {
+  const m = {};
+  for (const f of files) for (const row of f.data) {
+    const nm = (row['施設名']||'').trim(); const mm = nm.match(/_([A-Z]{2}\d[\w\-]*)$/); if (!mm) continue;
+    if (!m[mm[1]]) m[mm[1]] = nm.slice(0, nm.length - mm[0].length).replace(/様$/, '');
+  }
+  return m;
+}
+function renderUnmatched(orphan, noData) {
+  const el = document.getElementById('unmatchedResults'); if (!el) return;
+  orphan.sort((a,b)=> (b.firstDate||'').localeCompare(a.firstDate||'')); // 初成果が新しい順
+  const tcMap={'モノ':'background:#fff0d6;color:#e07b00','チェキ':'background:#e6f4ea;color:#1a8e3e'};
+  const chip=t=>`<span style="${tcMap[t]||'background:#f5f5f5;color:#666'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${esc(t||'（空欄）')}</span>`;
+  const tableA = orphan.length===0 ? '<div class="empty-msg">該当するデータはありません</div>' :
+    `<table><thead><tr><th>CSV側ID</th><th>CSV上の店名</th><th>提供ツール</th><th>初成果日</th><th>直近7日</th></tr></thead><tbody>` +
+    orphan.map(r=>`<tr><td><strong>${esc(r.id)}</strong></td><td>${esc(r.name)}${r.state&&r.state!=='運用中'?`<span style="color:#b00;font-size:11px;margin-left:6px">[${esc(r.state)}]</span>`:''}</td><td>${chip(r.tool)}</td><td><span class="date-val">${fmtDate(r.firstDate)}</span></td><td>${renderLast7(r.last7)}</td></tr>`).join('') +
+    `</tbody></table>`;
+  const tableB = noData.length===0 ? '<div class="empty-msg">該当するデータはありません</div>' :
+    `<table><thead><tr><th>顧客番号</th><th>案件名</th><th>提供ツール</th><th>kintoneステータス</th><th>理由</th></tr></thead><tbody>` +
+    noData.map(r=>`<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${chip(r.提供ツール)}</td><td>${r.kintone===''?'（空白）':r.kintone}</td><td style="font-size:12px;color:#555">${esc(r.reason)}${r.モノ顧客番号?`<span style="color:#888">（${esc(r.モノ顧客番号)}）</span>`:''}</td></tr>`).join('') +
+    `</tbody></table>`;
+  el.innerHTML = `
+    <div class="pattern-section" style="border-left:4px solid #888;margin-top:24px">
+      <div class="pattern-header" style="background:#eceff1;color:#333"><div class="ph-num" style="background:#888;color:#fff">A</div><div><div class="ph-title">CSVにはあるが kintone に紐づかない（初成果あり）</div><div class="ph-sub">kintone側の登録漏れの可能性：ステータスが施策中系か／提供ツール／モノ顧客番号・顧客番号を確認。CSV側で成果がまだ無いものは表示していません</div></div><div class="ph-count" style="background:#888">${orphan.length} 件</div></div>
+      <div class="pattern-body">${tableA}</div>
+    </div>
+    <div class="pattern-section" style="border-left:4px solid #888">
+      <div class="pattern-header" style="background:#eceff1;color:#333"><div class="ph-num" style="background:#888;color:#fff">B</div><div><div class="ph-title">kintone では施策中だが判定できなかった</div><div class="ph-sub">CSVに成績が無い、または提供ツール・モノ顧客番号が未設定。〇のまま放置されると降格判定が漏れます</div></div><div class="ph-count" style="background:#888">${noData.length} 件</div></div>
+      <div class="pattern-body">${tableB}</div>
+    </div>
+    <div style="font-size:11px;color:#888;margin:8px 0 0 4px">※ 表A・表Bは「判定結果を画像でコピー」の範囲には含まれません</div>`;
+}
 // ─── kintone最新取得 ──────────────────────────────
 document.getElementById('kintoneBtn').addEventListener('click', async () => {
   const btn = document.getElementById('kintoneBtn');
