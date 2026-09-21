@@ -123,9 +123,6 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
 .bd-table th, .bd-table td { border:1px solid #ddd; padding:3px 10px; text-align:center; }
 .bd-table th { background:#f1f3f4; color:#555; font-weight:700; }
 .bd-table td.bd-row { text-align:left; font-weight:700; background:#fafafa; }
-.mon-summary { display:flex; flex-wrap:wrap; gap:16px; align-items:center; background:#fff; border-radius:10px; padding:12px 18px; margin-bottom:12px; box-shadow:0 1px 4px rgba(0,0,0,.08); font-size:13px; }
-.mon-summary strong { font-size:20px; margin:0 3px; }
-details.mon-good > summary { cursor:pointer; padding:10px 16px; font-size:13px; font-weight:700; color:#1a8e3e; }
 .p1-color { color: #e07b00; } .p3-color { color: #0b47a1; } .p4-color { color: #b3120f; }
 .p1-bg { background: #e07b00; } .p3-bg { background: #0b47a1; } .p4-bg { background: #b3120f; }
 
@@ -272,7 +269,7 @@ details.mon-good > summary { cursor:pointer; padding:10px 16px; font-size:13px; 
         <span class="download-count" id="downloadCount0"></span>
         <div class="dl-note" id="dlNote0">
           成果報酬の全変更行（空白→▲／〇・▲→〇・〇→▲）と、成⇒月の初回課金日セット行を1ファイルにまとめています。<br>
-          <strong>成⇒月の行は「継続課金」にkintoneの現在値をそのまま書き戻す</strong>ので〇▲は変わりません（課金開始日だけ入ります）。月額固定は更新CSVに一切含めません。<br>
+          <strong>成⇒月の行は、課金開始日に「初成果の翌月1日」を入れます。</strong>「継続課金」はkintoneの現在値をそのまま書き戻すので〇▲は変わりません（空欄なら空欄のまま）。<br>
           課金開始日は「空白→▲／〇」の行だけ初成果日を入れ、それ以外の行はkintoneの現在値をそのまま書き戻すので既存の日付は消えません。<br>
           <strong>kintoneインポート時は「レコード番号」をキーに「継続課金」「課金開始日」の2列をマッピング</strong>してください。
         </div>
@@ -295,14 +292,6 @@ details.mon-good > summary { cursor:pointer; padding:10px 16px; font-size:13px; 
         </div>
       </div>
     </div>
-    <div id="monthlyWrap" style="display:none;margin-top:28px">
-      <div class="shot-bar">
-        <button class="shot-btn" id="shotBtnMonthly">📷 月額の順位確認を画像でコピー</button>
-        <span class="shot-status" id="shotStatusMonthly"></span>
-      </div>
-      <div id="captureAreaMonthly"></div>
-    </div>
-    <div id="unmatchedResults"></div>
   </div>
 </div>
 
@@ -436,7 +425,7 @@ function readAndStore(file, rule) {
 }
 function storeData(key, fileName, data) {
   if (key === 'meo') {
-    meoData = data;
+    meoData = data = data.filter(r => planOf(r) !== 'monthly'); // 月額固定はこのツールの対象外
     document.getElementById('dropSlot-meo').classList.add('loaded');
     document.getElementById('fname-meo').textContent = '✅ ' + fileName + '（' + data.length + '行）';
     showKintoneSummary();
@@ -655,21 +644,19 @@ const PLAN_LABEL = { seika:'成果', s2m:'成⇒月', monthly:'月額' };
 const PLAN_STYLE = { seika:'background:#e8f0fe;color:#0b47a1', s2m:'background:#f1e6fb;color:#4a1d80', monthly:'background:#e0f2f1;color:#00695c' };
 function toolKind(t) { return (t==='モノ'||t==='チェキ') ? t : 'なし'; }
 
-// 月額モニタ用の集計：直近30計測日の達成率／連続未達日数／仮想〇▲（〇スタートで成果報酬と同じルール）
-function monitorStats(days) {
-  const last30 = days.slice(-30);
-  const wins = last30.filter(d => d.win).length;
-  let streak = 0;
-  for (let i = days.length-1; i >= 0; i--) { if (!days[i].win) streak++; else break; }
-  const virtual = simulateStatus(days, '〇').status;
-  const bad = virtual === '▲' || (last30.length > 0 && wins === 0);
-  return { wins, total:last30.length, rate: last30.length ? wins/last30.length : 0, streak, virtual, bad };
+// 成⇒月：初成果日 'YYYY/MM/DD' → 翌月1日 'YYYY-MM-01'
+function nextMonthFirst(key) {
+  const p = String(key||'').split('/'); if (p.length !== 3) return '';
+  let y = Number(p[0]), m = Number(p[1]) + 1;
+  if (m > 12) { m = 1; y += 1; }
+  return y + '-' + String(m).padStart(2,'0') + '-01';
 }
 
 // ================================================================
 //  照合メイン
+//  目的：①成果報酬の〇▲更新 ②成果報酬の初成果日（課金開始日が空欄のとき）更新 ③成⇒月の初成果日の検知
 // ================================================================
-let lastResult = null; // { buckets, s2m, monitor, orphan, noData, cutoffYMD }
+let lastResult = null; // { buckets, s2m, cutoffYMD }
 function runMatch() {
   if (!meoData) return;
   const btn = document.getElementById('btnMatch');
@@ -681,77 +668,38 @@ function runMatch() {
       const chekiUD = chekiFiles.length ? buildChekiDailyResults(chekiFiles, cutoffYMD) : {};
       const hasStartCol = hasBillingStartField();
 
-      const buckets = [[],[],[]];            // 成果報酬：空白→▲〇／▲→〇／〇→▲（従来どおり）
-      const s2m = [];                         // 成⇒月：初回課金日をセットする案件
-      const monitor = [];                     // 月額固定（＋成⇒月）：順位がとれているかの確認
-      const usedMono = {}, usedCheki = {};   // 判定に使ったCSV側ID（表A用）
-      const noData = [];                       // kintoneにあるがCSVに成績が無い案件（表B用）
+      const buckets = [[],[],[]];  // 成果報酬：空白→▲〇／▲→〇／〇→▲（従来どおり）
+      const s2m = [];               // 成⇒月：初成果を検知した案件（課金開始日＝翌月1日をセット、〇▲は触らない）
       for (const row of meoData) {
         const tool = (row['提供ツール']||'').trim(), custNum = (row['顧客番号']||'').trim();
         const recordNum = (row['レコード番号']||'').trim();
         const plan = planOf(row), shisaku = (row['施策']||'').trim();
         const kRaw = normalizeStatus(row['継続課金']);
         const isBlank = kRaw===''||kRaw==='×';
-        let days=null;
-        const noDataEntry = (reason) => ({ 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku, plan, kintone:isBlank?'':kRaw, モノ顧客番号:(row['モノ顧客番号']||'').trim(), reason });
-        if (tool==='モノ') {
-          const uid=(row['モノ顧客番号']||'').trim();
-          if(!uid) { noData.push(noDataEntry('モノ顧客番号が空欄')); continue; }
-          if(!toolFiles.length) continue; // モノCSV未投入なら判定対象外扱い（表Bには出さない）
-          if(!monoUD[uid]) { noData.push(noDataEntry('モノCSVに該当ユーザーIDなし')); continue; }
-          usedMono[uid]=true; days=monoUD[uid];
-        }
-        else if (tool==='チェキ') {
-          if(!chekiFiles.length) continue;
-          if(!chekiUD[custNum]) { noData.push(noDataEntry('チェキCSVに該当顧客番号なし')); continue; }
-          usedCheki[custNum]=true; days=chekiUD[custNum];
-        }
-        else { noData.push(noDataEntry(tool ? '提供ツールが「'+tool+'」（順位データなし・判定不可）' : '提供ツールが空欄（順位データなし・判定不可）')); continue; }
+        let days = null;
+        if (tool==='モノ') { const uid=(row['モノ顧客番号']||'').trim(); days = uid ? monoUD[uid] : null; }
+        else if (tool==='チェキ') { days = chekiUD[custNum]; }
+        if (!days) continue; // 提供ツールなし・CSVに成績なしは判定対象外
 
         const base = { レコード番号:recordNum, 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku, plan, kintone:isBlank?'':kRaw, last7:days.slice(-7) };
 
-        if (plan === 'seika') {
-          // ── 成果報酬：従来どおり（×→▲：1日成果／▲→〇：3日連続成果／〇→▲：3日連続未達）
-          const sim = simulateStatus(days, (kRaw==='〇'||kRaw==='▲') ? kRaw : '×');
-          const entry = Object.assign({}, base, { simStatus:sim.status, firstDate:sim.firstSuccessDate||'' });
-          if (isBlank && (sim.status==='▲'||sim.status==='〇')) buckets[0].push(entry);
-          else if (kRaw==='▲' && sim.status==='〇') buckets[1].push(entry);
-          else if (kRaw==='〇' && sim.status==='▲') buckets[2].push(entry);
-          continue;
-        }
-        if (plan === 's2m' && hasStartCol) {
-          // ── 成⇒月：課金開始日が空で、初成果が出た案件だけ拾う。〇▲は触らない
+        if (plan === 's2m') {
+          // ── 成⇒月：課金開始日が空で、初成果が出た案件だけ拾う
+          if (!hasStartCol) continue;
           const start = (row['課金開始日']||'').trim();
           const first = simulateStatus(days, '×').firstSuccessDate;
-          if (!start && first) s2m.push(Object.assign({}, base, { simStatus:'（変更なし）', firstDate:first, rawStatus:(row['継続課金']||'').trim() }));
-          if (!start && !first) continue; // まだ一度も成果が無い＝月額課金が始まっていないので順位確認の対象外
+          if (!start && first) s2m.push(Object.assign({}, base, { simStatus:'（変更なし）', firstDate:first, billDate:nextMonthFirst(first), rawStatus:(row['継続課金']||'').trim() }));
+          continue;
         }
-        // ── 月額固定・成⇒月：順位確認（kintoneは更新しない）
-        monitor.push(Object.assign({}, base, monitorStats(days)));
+        // ── 成果報酬：従来どおり（×→▲：1日成果／▲→〇：3日連続成果／〇→▲：3日連続未達）
+        const sim = simulateStatus(days, (kRaw==='〇'||kRaw==='▲') ? kRaw : '×');
+        const entry = Object.assign({}, base, { simStatus:sim.status, firstDate:sim.firstSuccessDate||'' });
+        if (isBlank && (sim.status==='▲'||sim.status==='〇')) buckets[0].push(entry);
+        else if (kRaw==='▲' && sim.status==='〇') buckets[1].push(entry);
+        else if (kRaw==='〇' && sim.status==='▲') buckets[2].push(entry);
       }
       lastBuckets = buckets;
-      // 表A：CSVにはあるがkintoneのどの施策中案件にも紐づかないID（初成果があるものだけ）
-      const monoNames = buildMonoNameMap(toolFiles), chekiNames = buildChekiNameMap(chekiFiles);
-      const orphan = [];
-      // kintone取得データ内に同じIDがあるか（あれば「登録漏れ」ではなく、別ツール側で判定済みの二重計測）
-      const monoIdx = {}, custIdx = {};
-      for (const row of meoData) {
-        const u=(row['モノ顧客番号']||'').trim(), c=(row['顧客番号']||'').trim();
-        const info = { 顧客番号:c, 提供ツール:(row['提供ツール']||'').trim(), plan:planOf(row) };
-        if (u && !monoIdx[u]) monoIdx[u]=info;
-        if (c && !custIdx[c]) custIdx[c]=info;
-      }
-      for (const [uid, d] of Object.entries(monoUD)) {
-        if (usedMono[uid]) continue;
-        const r = simulateStatus(d, '×'); if (!r.firstSuccessDate) continue;
-        orphan.push({ linked:monoIdx[uid]||null, id:uid, name:(monoNames[uid]&&monoNames[uid].name)||'', state:(monoNames[uid]&&monoNames[uid].state)||'', tool:'モノ', firstDate:r.firstSuccessDate, last7:d.slice(-7) });
-      }
-      for (const [cid, d] of Object.entries(chekiUD)) {
-        if (usedCheki[cid]) continue;
-        const r = simulateStatus(d, '×'); if (!r.firstSuccessDate) continue;
-        orphan.push({ linked:custIdx[cid]||null, id:cid, name:chekiNames[cid]||'', state:'', tool:'チェキ', firstDate:r.firstSuccessDate, last7:d.slice(-7) });
-      }
-      lastResult = { buckets, s2m, monitor, orphan, noData, cutoffYMD };
+      lastResult = { buckets, s2m, cutoffYMD };
       renderAll(true);
       showDownloadArea(buckets, s2m);
     } catch(err) { alert('照合エラー: '+err.message); }
@@ -763,7 +711,7 @@ function runMatch() {
 const curFilter = { shisaku:'all', tool:'all' };
 function passFilter(r) {
   if (curFilter.shisaku !== 'all' && (r.施策||'') !== curFilter.shisaku) return false;
-  if (curFilter.tool !== 'all' && toolKind(r.提供ツール) !== curFilter.tool) return false;
+  if (curFilter.tool !== 'all' && r.提供ツール !== curFilter.tool) return false;
   return true;
 }
 function buildFilterBar() {
@@ -771,7 +719,7 @@ function buildFilterBar() {
     document.getElementById(id).innerHTML = opts.map(([v,l]) => `<button data-k="${key}" data-v="${v}" class="${curFilter[key]===v?'on':''}">${l}</button>`).join('');
   };
   mk('fbShisaku', 'shisaku', [['all','すべて'],['モノ','モノ'],['自社','自社']]);
-  mk('fbTool', 'tool', [['all','すべて'],['モノ','モノ'],['チェキ','チェキ'],['なし','なし']]);
+  mk('fbTool', 'tool', [['all','すべて'],['モノ','モノ'],['チェキ','チェキ']]);
 }
 document.getElementById('filterBar').addEventListener('click', e => {
   const b = e.target.closest('button[data-k]'); if (!b) return;
@@ -782,15 +730,14 @@ function renderAll(scroll) {
   const R = lastResult;
   buildFilterBar();
   renderResults(R.buckets.map(b => b.filter(passFilter)), R.s2m.filter(passFilter), R.cutoffYMD, scroll);
-  renderMonthly(R.monitor.filter(passFilter), R.cutoffYMD);
-  renderUnmatched(R.orphan.filter(o => curFilter.tool==='all' || o.tool===curFilter.tool), R.noData.filter(passFilter));
 }
+
 // ─── Rendering ───────────────────────────────────────────
 const PATTERNS = [
   { cls:'p1', bgCls:'p1-bg', colorCls:'p1-color', label:'空白 → ▲／〇', desc:'【成果報酬】kintone 未設定・成果あり（要登録）', showDate:true },
   { cls:'p3', bgCls:'p3-bg', colorCls:'p3-color', label:'▲ → 〇', desc:'【成果報酬】仮課金→本課金へ昇格（継続課金を〇に変更）', showDate:false },
   { cls:'p4', bgCls:'p4-bg', colorCls:'p4-color', label:'〇 → ▲', desc:'【成果報酬】本課金→3日連続未達で降格（要確認）', showDate:false },
-  { cls:'p5', bgCls:'p5-bg', colorCls:'p5-color', label:'成⇒月：初回課金日セット', desc:'【3位以内(成⇒月)】課金開始日が空で初成果あり → 課金開始日だけ更新（〇▲は触らない）', showDate:true },
+  { cls:'p5', bgCls:'p5-bg', colorCls:'p5-color', label:'成⇒月：初回課金日セット', desc:'【3位以内(成⇒月)】課金開始日が空で初成果あり → 課金開始日に「初成果の翌月1日」をセット（〇▲は触らない）', showDate:true },
 ];
 function chipHtml(text, style) { return `<span class="mini-chip" style="${style}">${esc(text)}</span>`; }
 function toolChip(t) { const m={'モノ':'background:#fff0d6;color:#e07b00','チェキ':'background:#e6f4ea;color:#1a8e3e'}; return chipHtml(t||'（空欄）', m[t]||'background:#f5f5f5;color:#666'); }
@@ -816,41 +763,16 @@ function renderResults(buckets, s2m, cutoffYMD, scroll) {
 function buildTable(rows, showDate) {
   const cols=['顧客番号','案件名','施策','提供ツール','kintoneステータス','シミュレーション結果','直近7日'];
   if(showDate) cols.push('初成果日');
+  const hasBill = rows.some(r => r.billDate);
+  if(hasBill) cols.push('課金開始日にセットする日');
   const head=cols.map(c=>`<th>${c}</th>`).join('');
   const body=rows.map(r=>{
     const kLabel=r.kintone===''?'（空白）':r.kintone;
-    return `<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}</td><td>${kLabel}</td><td>${r.simStatus}</td><td>${renderLast7(r.last7)}</td>${showDate?`<td>${r.firstDate?`<span class="date-val">${fmtDate(r.firstDate)}</span>`:'<span style="color:#aaa">-</span>'}</td>`:''}</tr>`;
+    return `<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}</td><td>${kLabel}</td><td>${r.simStatus}</td><td>${renderLast7(r.last7)}</td>${showDate?`<td>${r.firstDate?`<span class="date-val">${fmtDate(r.firstDate)}</span>`:'<span style="color:#aaa">-</span>'}</td>`:''}${hasBill?`<td><span class="date-val">${esc(r.billDate||'')}</span></td>`:''}</tr>`;
   }).join('');
   return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
-// ─── 月額の順位確認（kintoneは更新しない・見るだけ） ─────────────
-function renderMonthly(rows, cutoffYMD) {
-  const wrap = document.getElementById('monthlyWrap'), el = document.getElementById('captureAreaMonthly');
-  const hasPlanCol = !!(meoData && meoData.length && ('契約プラン' in meoData[0]));
-  if (!hasPlanCol) { wrap.style.display = 'none'; return; }
-  wrap.style.display = '';
-  const bad = rows.filter(r => r.bad).sort((a,b)=> a.rate-b.rate || b.streak-a.streak);
-  const good = rows.filter(r => !r.bad).sort((a,b)=> a.rate-b.rate);
-  const pct = v => Math.round(v*100) + '%';
-  const table = list => `<table><thead><tr><th>顧客番号</th><th>案件名</th><th>プラン</th><th>施策</th><th>提供ツール</th><th>直近30日の3位以内</th><th>連続未達</th><th>直近7日</th></tr></thead><tbody>` +
-    list.map(r => `<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${planChip(r.plan)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}</td>` +
-      `<td><strong style="color:${r.rate<0.3?'#b3120f':r.rate<0.7?'#b06000':'#1a8e3e'}">${pct(r.rate)}</strong><span style="color:#888;font-size:11px;margin-left:4px">（${r.wins}/${r.total}日）</span></td>` +
-      `<td>${r.streak>0?`<span style="color:${r.streak>=3?'#b3120f':'#666'};font-weight:700">${r.streak}日</span>`:'<span style="color:#aaa">-</span>'}</td><td>${renderLast7(r.last7)}</td></tr>`).join('') + `</tbody></table>`;
-  let dl=''; if (cutoffYMD) { const [y,m,d]=cutoffYMD.split('-'); dl=`<span style="font-size:12px;color:#00695c;background:#e0f2f1;padding:4px 12px;border-radius:20px;font-weight:700;">📅 ${y}年${m}月${d}日 時点</span>`; }
-  const goodRate = rows.length ? pct(good.length/rows.length) : '-';
-  el.innerHTML = `
-    <div class="mon-summary">${dl}<span style="font-weight:700;color:#00695c">月額の順位確認</span>
-      <span>対象<strong>${rows.length}</strong>件</span>
-      <span style="color:#1a8e3e">とれている<strong>${good.length}</strong>件（${goodRate}）</span>
-      <span style="color:#b3120f">とれていない<strong>${bad.length}</strong>件</span>
-      <span style="font-size:11px;color:#888;width:100%">月額固定と、課金が始まった成⇒月が対象。kintoneは更新しません。「とれていない」＝3日連続未達のあと3日連続の3位以内に戻っていない（成果報酬なら▲に落ちている状態）、または直近30日で3位以内が0日</span>
-    </div>
-    <div class="pattern-section p4"><div class="pattern-header"><div class="ph-num">!</div><div><div class="ph-title">順位がとれていない（月額）</div><div class="ph-sub">達成率の低い順。解約リスクの高い順に確認・対策を</div></div><div class="ph-count">${bad.length} 件</div></div>
-      <div class="pattern-body">${bad.length?table(bad):'<div class="empty-msg">該当するデータはありません</div>'}</div></div>
-    <div class="pattern-section" style="border-left:4px solid #1a8e3e"><details class="mon-good"><summary>順位がとれている（月額）：${good.length} 件 ― クリックで一覧を開く</summary>
-      <div class="pattern-body">${good.length?table(good):'<div class="empty-msg">該当するデータはありません</div>'}</div></details></div>`;
-}
 function renderLast7(days) {
   if(!days||!days.length) return '<span style="color:#aaa;font-size:12px">データなし</span>';
   return '<div class="day-icons-row">'+days.map(d=>`<div class="day-icon-cell" title="${d.date} ${d.win?'勝ち':'負け'}"><span class="di-icon">${d.win?'✅':'❌'}</span><span class="di-label">${d.date}</span></div>`).join('')+'</div>';
@@ -864,53 +786,6 @@ function fmtDate(d) {
 }
 function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-// ─── 判定対象外の一覧（表A・表B） ──────────────────────
-// モノCSV：ユーザーID → { ビジネス名, 状態 }
-function buildMonoNameMap(files) {
-  const m = {};
-  for (const f of files) for (const row of f.data) {
-    const uid = (row['ユーザーID']||'').trim(); if (!uid || m[uid]) continue;
-    m[uid] = { name:(row['ビジネス名']||'').trim(), state:(row['状態']||'').trim() };
-  }
-  return m;
-}
-// チェキCSV：顧客番号 → 施設名（末尾の「_UL〇〇〇〇」を除いたもの）
-function buildChekiNameMap(files) {
-  const m = {};
-  for (const f of files) for (const row of f.data) {
-    const nm = (row['施設名']||'').trim(); const mm = nm.match(/_([A-Z]{2}\d[\w\-]*)$/); if (!mm) continue;
-    if (!m[mm[1]]) m[mm[1]] = nm.slice(0, nm.length - mm[0].length).replace(/様$/, '');
-  }
-  return m;
-}
-function renderUnmatched(orphanAll, noData) {
-  let orphan = orphanAll.slice();
-  const el = document.getElementById('unmatchedResults'); if (!el) return;
-  orphan.sort((a,b)=> (b.firstDate||'').localeCompare(a.firstDate||'')); // 初成果が新しい順
-  const tcMap={'モノ':'background:#fff0d6;color:#e07b00','チェキ':'background:#e6f4ea;color:#1a8e3e'};
-  const chip=t=>`<span style="${tcMap[t]||'background:#f5f5f5;color:#666'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${esc(t||'（空欄）')}</span>`;
-  const linkedList = orphan.filter(r => r.linked);
-  orphan = orphan.filter(r => !r.linked);
-  const rowA = r=>`<tr><td><strong>${esc(r.id)}</strong></td><td>${esc(r.name)}${r.state&&r.state!=='運用中'?`<span style="color:#b00;font-size:11px;margin-left:6px">[${esc(r.state)}]</span>`:''}</td><td>${chip(r.tool)}</td><td><span class="date-val">${fmtDate(r.firstDate)}</span></td><td>${renderLast7(r.last7)}</td>${r.linked?`<td style="font-size:12px;color:#555"><strong>${esc(r.linked.顧客番号)}</strong>　${planChip(r.linked.plan)} 提供ツール＝${esc(r.linked.提供ツール||'（空欄）')}</td>`:''}</tr>`;
-  const headA = extra => `<table><thead><tr><th>CSV側ID</th><th>CSV上の店名</th><th>CSVの種類</th><th>初成果日</th><th>直近7日</th>${extra?'<th>kintone側の登録</th>':''}</tr></thead><tbody>`;
-  const tableA = orphan.length===0 ? '<div class="empty-msg">該当するデータはありません</div>' : headA(false) + orphan.map(rowA).join('') + `</tbody></table>`;
-  const tableA2 = linkedList.length===0 ? '' :
-    `<details class="mon-good"><summary style="color:#555">kintoneに登録あり・別ツール側で判定済み（二重計測）：${linkedList.length} 件 ― 対応不要。クリックで開く</summary>` + headA(true) + linkedList.map(rowA).join('') + `</tbody></table></details>`;
-  const tableB = noData.length===0 ? '<div class="empty-msg">該当するデータはありません</div>' :
-    `<table><thead><tr><th>顧客番号</th><th>案件名</th><th>プラン</th><th>施策</th><th>提供ツール</th><th>kintoneステータス</th><th>理由</th></tr></thead><tbody>` +
-    noData.map(r=>`<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${planChip(r.plan)}</td><td>${shisakuChip(r.施策)}</td><td>${chip(r.提供ツール)}</td><td>${r.kintone===''?'（空白）':r.kintone}</td><td style="font-size:12px;color:#555">${esc(r.reason)}${r.モノ顧客番号?`<span style="color:#888">（${esc(r.モノ顧客番号)}）</span>`:''}</td></tr>`).join('') +
-    `</tbody></table>`;
-  el.innerHTML = `
-    <div class="pattern-section" style="border-left:4px solid #888;margin-top:24px">
-      <div class="pattern-header" style="background:#eceff1;color:#333"><div class="ph-num" style="background:#888;color:#fff">A</div><div><div class="ph-title">CSVにはあるが kintone の取得データに該当IDが無い（初成果あり）</div><div class="ph-sub">考えられる原因：①モノ顧客番号／顧客番号がkintoneに未入力 ②ステータスが施策中系でない（停止・解約など） ③契約プランがGBP削除など取得対象外。CSV側で成果がまだ無いものは表示していません</div></div><div class="ph-count" style="background:#888">${orphan.length} 件</div></div>
-      <div class="pattern-body">${tableA}${tableA2}</div>
-    </div>
-    <div class="pattern-section" style="border-left:4px solid #888">
-      <div class="pattern-header" style="background:#eceff1;color:#333"><div class="ph-num" style="background:#888;color:#fff">B</div><div><div class="ph-title">kintone では施策中だが判定できなかった</div><div class="ph-sub">CSVに成績が無い、または提供ツールなし・モノ顧客番号が未設定。成果報酬は〇のまま放置されると降格判定が漏れます。月額は順位確認ができません</div></div><div class="ph-count" style="background:#888">${noData.length} 件</div></div>
-      <div class="pattern-body">${tableB}</div>
-    </div>
-    <div style="font-size:11px;color:#888;margin:8px 0 0 4px">※ 表A・表Bは画像コピーの範囲には含まれません</div>`;
-}
 // ─── kintone最新取得 ──────────────────────────────
 document.getElementById('kintoneBtn').addEventListener('click', async () => {
   const btn = document.getElementById('kintoneBtn');
@@ -923,7 +798,7 @@ document.getElementById('kintoneBtn').addEventListener('click', async () => {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const csv = await res.text();
     if (csv.startsWith('Error:')) throw new Error(csv);
-    meoData = parseCSV(csv);
+    meoData = parseCSV(csv).filter(r => planOf(r) !== 'monthly'); // 月額固定はこのツールの対象外
     const now = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
     status.textContent = '✅ ' + now + ' 取得完了';
     showKintoneSummary();
@@ -958,7 +833,7 @@ function showKintoneSummary() {
     '<div class="ks-item"><span class="ks-badge sankaku">▲</span><span class="ks-value">' + sankaku + '</span><span class="ks-rate">件（' + rate(sankaku) + '%）</span></div>' +
     '<div class="ks-item"><span class="ks-badge blank">空</span><span class="ks-value">' + blank + '</span><span class="ks-rate">件（' + rate(blank) + '%）</span></div>' +
     '<div class="ks-condition">' +
-    '<span class="ks-cond-label">契約プラン：</span>成果報酬3位以内・その他（UL2017系列）／3位以内(成⇒月)／月額固定　／　' +
+    '<span class="ks-cond-label">契約プラン：</span>成果報酬3位以内・その他（UL2017系列）／3位以内(成⇒月)　※月額固定は対象外　／　' +
     '<span class="ks-cond-label">ステータス：</span>施策中・施策中(要対応)・施策中(HP課金中)' +
     '</div>' + buildBreakdown() + buildFieldCheck();
   document.getElementById('kintoneSummary').classList.add('visible');
@@ -967,7 +842,7 @@ function showKintoneSummary() {
 // プラン × 施策 × 提供ツール の件数内訳
 function buildBreakdown() {
   if (!meoData || !meoData.length || !('契約プラン' in meoData[0])) return '';
-  const S = ['モノ','自社',''], T = ['モノ','チェキ','なし'], P = ['seika','s2m','monthly'];
+  const S = ['モノ','自社',''], T = ['モノ','チェキ','なし'], P = ['seika','s2m'];
   const cnt = {};
   for (const r of meoData) {
     let sh = (r['施策']||'').trim(); if (sh!=='モノ' && sh!=='自社') sh = '';
@@ -1001,7 +876,7 @@ function buildFieldCheck() {
     : '<span style="color:#d93025;font-weight:700;">→ 「課金開始日」列が無いため2ファイル出力になります。GASの取得項目に課金開始日を追加してください</span>' +
       '<div style="color:#888;margin-top:2px;">取得できている列：' + esc(headers.join(' / ')) + '</div>';
   const planWarn = headers.includes('契約プラン') ? ''
-    : '<div style="color:#d93025;font-weight:700;margin-top:2px;">→ 「契約プラン」列が無いため全件を成果報酬として扱います（月額の順位確認・成⇒月の切り分けは動きません）。GASを更新してください</div>';
+    : '<div style="color:#d93025;font-weight:700;margin-top:2px;">→ 「契約プラン」列が無いため全件を成果報酬として扱います（成⇒月の切り分けが動きません）。GASを更新してください</div>';
   return '<div class="ks-condition"><span class="ks-cond-label">取得列チェック：</span>' + items + '<div style="margin-top:4px;">' + verdict + '</div>' + planWarn + '</div>';
 }
 
@@ -1067,10 +942,10 @@ function generateMergedCSV(buckets) {
   buckets[0].forEach(e => push(e, null));
   buckets[1].forEach(e => push(e, '〇'));
   buckets[2].forEach(e => push(e, '▲'));
-  // 成⇒月：継続課金はkintoneの現在値をそのまま書き戻し（〇▲ノータッチ）、課金開始日だけ初成果日を入れる
+  // 成⇒月：継続課金はkintoneの現在値をそのまま書き戻し（〇▲ノータッチ）、課金開始日には初成果の翌月1日を入れる
   ((lastResult && lastResult.s2m) || []).forEach(e => {
-    if (!e.レコード番号 || !e.firstDate) return;
-    lines.push([e.レコード番号, e.rawStatus, keyToDash(e.firstDate)].map(q).join(','));
+    if (!e.レコード番号 || !e.billDate) return;
+    lines.push([e.レコード番号, e.rawStatus, e.billDate].map(q).join(','));
   });
   return lines.join('\n');
 }
@@ -1162,7 +1037,6 @@ function bindShot(btnId, statusId, areaId, filePrefix) {
   });
 }
 bindShot('shotBtn', 'shotStatus', 'captureArea', 'meo_判定結果_');
-bindShot('shotBtnMonthly', 'shotStatusMonthly', 'captureAreaMonthly', 'meo_月額順位確認_');
 </script>
 </body>
 </html>
