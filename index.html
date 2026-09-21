@@ -733,15 +733,23 @@ function runMatch() {
       // 表A：CSVにはあるがkintoneのどの施策中案件にも紐づかないID（初成果があるものだけ）
       const monoNames = buildMonoNameMap(toolFiles), chekiNames = buildChekiNameMap(chekiFiles);
       const orphan = [];
+      // kintone取得データ内に同じIDがあるか（あれば「登録漏れ」ではなく、別ツール側で判定済みの二重計測）
+      const monoIdx = {}, custIdx = {};
+      for (const row of meoData) {
+        const u=(row['モノ顧客番号']||'').trim(), c=(row['顧客番号']||'').trim();
+        const info = { 顧客番号:c, 提供ツール:(row['提供ツール']||'').trim(), plan:planOf(row) };
+        if (u && !monoIdx[u]) monoIdx[u]=info;
+        if (c && !custIdx[c]) custIdx[c]=info;
+      }
       for (const [uid, d] of Object.entries(monoUD)) {
         if (usedMono[uid]) continue;
         const r = simulateStatus(d, '×'); if (!r.firstSuccessDate) continue;
-        orphan.push({ id:uid, name:(monoNames[uid]&&monoNames[uid].name)||'', state:(monoNames[uid]&&monoNames[uid].state)||'', tool:'モノ', firstDate:r.firstSuccessDate, last7:d.slice(-7) });
+        orphan.push({ linked:monoIdx[uid]||null, id:uid, name:(monoNames[uid]&&monoNames[uid].name)||'', state:(monoNames[uid]&&monoNames[uid].state)||'', tool:'モノ', firstDate:r.firstSuccessDate, last7:d.slice(-7) });
       }
       for (const [cid, d] of Object.entries(chekiUD)) {
         if (usedCheki[cid]) continue;
         const r = simulateStatus(d, '×'); if (!r.firstSuccessDate) continue;
-        orphan.push({ id:cid, name:chekiNames[cid]||'', state:'', tool:'チェキ', firstDate:r.firstSuccessDate, last7:d.slice(-7) });
+        orphan.push({ linked:custIdx[cid]||null, id:cid, name:chekiNames[cid]||'', state:'', tool:'チェキ', firstDate:r.firstSuccessDate, last7:d.slice(-7) });
       }
       lastResult = { buckets, s2m, monitor, orphan, noData, cutoffYMD };
       renderAll(true);
@@ -875,23 +883,27 @@ function buildChekiNameMap(files) {
   }
   return m;
 }
-function renderUnmatched(orphan, noData) {
+function renderUnmatched(orphanAll, noData) {
+  let orphan = orphanAll.slice();
   const el = document.getElementById('unmatchedResults'); if (!el) return;
   orphan.sort((a,b)=> (b.firstDate||'').localeCompare(a.firstDate||'')); // 初成果が新しい順
   const tcMap={'モノ':'background:#fff0d6;color:#e07b00','チェキ':'background:#e6f4ea;color:#1a8e3e'};
   const chip=t=>`<span style="${tcMap[t]||'background:#f5f5f5;color:#666'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${esc(t||'（空欄）')}</span>`;
-  const tableA = orphan.length===0 ? '<div class="empty-msg">該当するデータはありません</div>' :
-    `<table><thead><tr><th>CSV側ID</th><th>CSV上の店名</th><th>提供ツール</th><th>初成果日</th><th>直近7日</th></tr></thead><tbody>` +
-    orphan.map(r=>`<tr><td><strong>${esc(r.id)}</strong></td><td>${esc(r.name)}${r.state&&r.state!=='運用中'?`<span style="color:#b00;font-size:11px;margin-left:6px">[${esc(r.state)}]</span>`:''}</td><td>${chip(r.tool)}</td><td><span class="date-val">${fmtDate(r.firstDate)}</span></td><td>${renderLast7(r.last7)}</td></tr>`).join('') +
-    `</tbody></table>`;
+  const linkedList = orphan.filter(r => r.linked);
+  orphan = orphan.filter(r => !r.linked);
+  const rowA = r=>`<tr><td><strong>${esc(r.id)}</strong></td><td>${esc(r.name)}${r.state&&r.state!=='運用中'?`<span style="color:#b00;font-size:11px;margin-left:6px">[${esc(r.state)}]</span>`:''}</td><td>${chip(r.tool)}</td><td><span class="date-val">${fmtDate(r.firstDate)}</span></td><td>${renderLast7(r.last7)}</td>${r.linked?`<td style="font-size:12px;color:#555"><strong>${esc(r.linked.顧客番号)}</strong>　${planChip(r.linked.plan)} 提供ツール＝${esc(r.linked.提供ツール||'（空欄）')}</td>`:''}</tr>`;
+  const headA = extra => `<table><thead><tr><th>CSV側ID</th><th>CSV上の店名</th><th>CSVの種類</th><th>初成果日</th><th>直近7日</th>${extra?'<th>kintone側の登録</th>':''}</tr></thead><tbody>`;
+  const tableA = orphan.length===0 ? '<div class="empty-msg">該当するデータはありません</div>' : headA(false) + orphan.map(rowA).join('') + `</tbody></table>`;
+  const tableA2 = linkedList.length===0 ? '' :
+    `<details class="mon-good"><summary style="color:#555">kintoneに登録あり・別ツール側で判定済み（二重計測）：${linkedList.length} 件 ― 対応不要。クリックで開く</summary>` + headA(true) + linkedList.map(rowA).join('') + `</tbody></table></details>`;
   const tableB = noData.length===0 ? '<div class="empty-msg">該当するデータはありません</div>' :
     `<table><thead><tr><th>顧客番号</th><th>案件名</th><th>プラン</th><th>施策</th><th>提供ツール</th><th>kintoneステータス</th><th>理由</th></tr></thead><tbody>` +
     noData.map(r=>`<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${planChip(r.plan)}</td><td>${shisakuChip(r.施策)}</td><td>${chip(r.提供ツール)}</td><td>${r.kintone===''?'（空白）':r.kintone}</td><td style="font-size:12px;color:#555">${esc(r.reason)}${r.モノ顧客番号?`<span style="color:#888">（${esc(r.モノ顧客番号)}）</span>`:''}</td></tr>`).join('') +
     `</tbody></table>`;
   el.innerHTML = `
     <div class="pattern-section" style="border-left:4px solid #888;margin-top:24px">
-      <div class="pattern-header" style="background:#eceff1;color:#333"><div class="ph-num" style="background:#888;color:#fff">A</div><div><div class="ph-title">CSVにはあるが kintone に紐づかない（初成果あり）</div><div class="ph-sub">kintone側の登録漏れの可能性：ステータスが施策中系か／提供ツール／モノ顧客番号・顧客番号を確認。CSV側で成果がまだ無いものは表示していません</div></div><div class="ph-count" style="background:#888">${orphan.length} 件</div></div>
-      <div class="pattern-body">${tableA}</div>
+      <div class="pattern-header" style="background:#eceff1;color:#333"><div class="ph-num" style="background:#888;color:#fff">A</div><div><div class="ph-title">CSVにはあるが kintone の取得データに該当IDが無い（初成果あり）</div><div class="ph-sub">考えられる原因：①モノ顧客番号／顧客番号がkintoneに未入力 ②ステータスが施策中系でない（停止・解約など） ③契約プランがGBP削除など取得対象外。CSV側で成果がまだ無いものは表示していません</div></div><div class="ph-count" style="background:#888">${orphan.length} 件</div></div>
+      <div class="pattern-body">${tableA}${tableA2}</div>
     </div>
     <div class="pattern-section" style="border-left:4px solid #888">
       <div class="pattern-header" style="background:#eceff1;color:#333"><div class="ph-num" style="background:#888;color:#fff">B</div><div><div class="ph-title">kintone では施策中だが判定できなかった</div><div class="ph-sub">CSVに成績が無い、または提供ツールなし・モノ顧客番号が未設定。成果報酬は〇のまま放置されると降格判定が漏れます。月額は順位確認ができません</div></div><div class="ph-count" style="background:#888">${noData.length} 件</div></div>
