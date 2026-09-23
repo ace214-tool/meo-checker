@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MEO継続課金ステータス照合</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -168,11 +167,18 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
 }
 .ks-condition .ks-cond-label { color: #555; font-weight: 700; margin-right: 2px; }
 
-.shot-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.shot-btn { background: #fff; color: #333; border: 1px solid #ccc; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
-.shot-btn:hover { border-color: #1a73e8; color: #1a73e8; }
-.shot-btn:disabled { color: #aaa; cursor: wait; }
-.shot-status { font-size: 12px; color: #1a8e3e; font-weight: 600; }
+.snap-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.snap-btn { background: #fff; color: #333; border: 1px solid #ccc; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.snap-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+.snap-btn:disabled { color: #aaa; cursor: wait; }
+.snap-btn.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+.snap-btn.primary:hover { background: #1557b0; }
+.snap-status { font-size: 12px; color: #1a8e3e; font-weight: 600; }
+.snap-url { display: none; align-items: center; gap: 8px; width: 100%; margin-top: 4px; }
+.snap-url input { flex: 1; font-size: 12px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-family: monospace; }
+.snap-banner { display: none; background: #fff8e1; border: 1px solid #f0c36d; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.7; }
+.snap-banner strong { color: #b06000; }
+body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .upload-card, body.snap-mode .date-card, body.snap-mode .btn-area, body.snap-mode .download-area, body.snap-mode #snapSaveBtn, body.snap-mode .fb-note { display: none !important; }
 #captureArea { padding: 12px; }
 .download-area {
   background: white; border-radius: 12px; padding: 24px; margin-top: 20px;
@@ -204,6 +210,7 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
   <header>
     <h1>MEO継続課金ステータス照合ツール</h1>
   </header>
+  <div class="snap-banner" id="snapBanner"></div>
 
   <div class="kintone-zone">
     <button class="kintone-btn" id="kintoneBtn">🔄 ① MEO案件管理を最新取得</button>
@@ -251,9 +258,12 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
       <span><span class="fb-label">提供ツール：</span><span id="fbTool"></span></span>
       <span class="fb-note">※絞り込みは画面表示だけ。更新CSVは常に全件を出力します</span>
     </div>
-    <div class="shot-bar">
-      <button class="shot-btn" id="shotBtn">📷 判定結果を画像でコピー</button>
-      <span class="shot-status" id="shotStatus"></span>
+    <div class="snap-bar">
+      <button class="snap-btn primary" id="snapSaveBtn">💾 この日の結果を保存してURL発行</button>
+      <button class="snap-btn" id="copyTableBtn">📋 表をコピー（スプシ貼り付け用）</button>
+      <button class="snap-btn" id="csvTableBtn">📥 表をCSVダウンロード</button>
+      <span class="snap-status" id="snapStatus"></span>
+      <div class="snap-url" id="snapUrlBox"><input type="text" id="snapUrlInput" readonly><button class="snap-btn" id="snapUrlCopy">URLをコピー</button></div>
     </div>
     <div id="captureArea">
     <div class="summary-bar" id="summaryBar"></div>
@@ -745,7 +755,7 @@ function renderResults(buckets, s2m, cutoffYMD, scroll) {
   let dl = '';
   if (cutoffYMD) { const [y,m,d]=cutoffYMD.split('-'); dl=`<span style="font-size:12px;color:#1a73e8;background:#e8f0fe;padding:4px 12px;border-radius:20px;font-weight:700;margin-right:4px;">📅 判定日：${y}年${m}月${d}日 時点</span>`; }
   const filt = (curFilter.shisaku!=='all'||curFilter.tool!=='all') ? `<span style="font-size:11px;color:#b06000;font-weight:700">絞り込み中（施策：${curFilter.shisaku==='all'?'すべて':curFilter.shisaku}／ツール：${curFilter.tool==='all'?'すべて':curFilter.tool}）</span>` : '';
-  const s2mNote = (!hasBillingStartField()) ? `<div style="width:100%;font-size:11px;color:#d93025;margin-top:6px;">⚠️ 取得データに「課金開始日」列が無いため、成⇒月の初回課金日判定はスキップしました</div>` : '';
+  const s2mNote = (!(snapMode ? snapHasBill : hasBillingStartField())) ? `<div style="width:100%;font-size:11px;color:#d93025;margin-top:6px;">⚠️ 取得データに「課金開始日」列が無いため、成⇒月の初回課金日判定はスキップしました</div>` : '';
   document.getElementById('summaryBar').innerHTML = dl + filt +
     `<span class="summary-label">差異件数：</span>` +
     PATTERNS.map((p,i)=>`<div class="summary-item"><span class="s-badge ${p.bgCls}">${i+1}</span><span style="color:#666">${p.label}</span><span class="s-count ${p.colorCls}">${groups[i].length}</span><span class="s-unit">件</span></div>`).join('') +
@@ -979,40 +989,89 @@ document.getElementById('downloadBtn2').addEventListener('click', () => {
   downloadCSV(csv, 'kintone_update_課金開始日_' + ymd + '.csv');
 });
 
-// ─── 画像でコピー（判定結果／月額の順位確認 共通） ─────────────
-function bindShot(btnId, statusId, areaId, filePrefix) {
-  document.getElementById(btnId).addEventListener('click', async () => {
-    const btn = document.getElementById(btnId);
-    const st = document.getElementById(statusId);
-    const area = document.getElementById(areaId);
-    if (!lastResult) return;
-    btn.disabled = true; st.style.color = '#666'; st.textContent = '画像を生成中...';
-    const ymd = (document.getElementById('judgeDate').value || '').replace(/-/g, '');
-    const makeBlob = () => html2canvas(area, { backgroundColor: '#f5f7fa', scale: 2, useCORS: true })
-      .then(canvas => new Promise(res => canvas.toBlob(res, 'image/png')));
-    try {
-      if (navigator.clipboard && window.ClipboardItem) {
-        // Blobを返すPromiseを直接渡すと、クリック操作の有効期間内としてクリップボード書き込みが許可される
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': makeBlob() })]);
-        st.style.color = '#1a8e3e'; st.textContent = '✅ クリップボードにコピーしました（Ctrl+Vで貼り付け）';
-      } else {
-        throw new Error('clipboard unsupported');
-      }
-    } catch (err) {
-      // コピー不可ならPNGダウンロードにフォールバック
-      try {
-        const blob = await makeBlob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = filePrefix + ymd + '.png';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-        st.style.color = '#b06000'; st.textContent = '⚠️ コピーできなかったためPNGをダウンロードしました';
-      } catch (e2) {
-        st.style.color = '#d93025'; st.textContent = '❌ 画像生成に失敗：' + e2.message;
-      }
-    } finally { btn.disabled = false; }
-  });
+// ─── スナップショット保存（その時点の判定結果をGAS経由でスプレッドシートに保存し、URLを発行） ─────────────
+// 保存内容：判定日・保存日時・成果報酬3バケット・成⇒月・未計測日・課金開始日列の有無。閲覧は ?snap=ID
+let snapMode = null; // 閲覧モード時 { id, savedAt }
+function snapPayload() {
+  const R = lastResult;
+  return { v: 1, savedAt: new Date().toISOString(), cutoffYMD: R.cutoffYMD, buckets: R.buckets, s2m: R.s2m,
+           unmeasuredChekiDays, hasBill: hasBillingStartField() };
 }
-bindShot('shotBtn', 'shotStatus', 'captureArea', 'meo_判定結果_');
+document.getElementById('snapSaveBtn').addEventListener('click', async () => {
+  if (!lastResult) return;
+  const btn = document.getElementById('snapSaveBtn'), st = document.getElementById('snapStatus');
+  btn.disabled = true; st.style.color = '#666'; st.textContent = '保存中...';
+  try {
+    // Content-Type を text/plain にすると GAS でも CORS のプリフライトが発生せず POST できる
+    const res = await fetch(KINTONE_GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'saveSnapshot', payload: snapPayload() }) });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || '保存失敗');
+    const url = location.origin + location.pathname + '?snap=' + j.id;
+    document.getElementById('snapUrlInput').value = url;
+    document.getElementById('snapUrlBox').style.display = 'flex';
+    st.style.color = '#1a8e3e'; st.textContent = '✅ 保存しました';
+    try { await navigator.clipboard.writeText(url); st.textContent += '（URLをクリップボードにコピー済み）'; } catch (e) {}
+  } catch (err) { st.style.color = '#d93025'; st.textContent = '❌ 保存に失敗：' + err.message; }
+  finally { btn.disabled = false; }
+});
+document.getElementById('snapUrlCopy').addEventListener('click', async () => {
+  const inp = document.getElementById('snapUrlInput'); inp.select();
+  try { await navigator.clipboard.writeText(inp.value); document.getElementById('snapStatus').textContent = '✅ URLをコピーしました'; } catch (e) { document.execCommand('copy'); }
+});
+
+// 閲覧モード：?snap=ID があればGASから取得して表示だけする（入力欄・更新CSVは隠す）
+async function loadSnapshotFromUrl() {
+  const id = new URLSearchParams(location.search).get('snap');
+  if (!id) return;
+  document.body.classList.add('snap-mode');
+  const banner = document.getElementById('snapBanner');
+  banner.style.display = 'block'; banner.innerHTML = '保存済みの判定結果を読み込み中...';
+  try {
+    const res = await fetch(KINTONE_GAS_URL + '?snap=' + encodeURIComponent(id));
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || '取得失敗');
+    const d = j.data;
+    snapMode = { id, savedAt: d.savedAt };
+    unmeasuredChekiDays = d.unmeasuredChekiDays || [];
+    snapHasBill = !!d.hasBill;
+    lastResult = { buckets: d.buckets, s2m: d.s2m || [], cutoffYMD: d.cutoffYMD };
+    lastBuckets = d.buckets;
+    const saved = new Date(d.savedAt).toLocaleString('ja-JP');
+    banner.innerHTML = `<strong>📌 保存済みの判定結果（閲覧モード）</strong>　判定日：${esc(d.cutoffYMD)}　／　保存日時：${esc(saved)}<br>` +
+      `この画面は保存時点のデータです。最新の照合をするには <a href="${location.pathname}">通常画面</a> を開いてください。`;
+    renderAll(false);
+  } catch (err) { banner.innerHTML = '<strong>❌ 保存データを読み込めませんでした：</strong>' + esc(err.message); }
+}
+let snapHasBill = false;
+loadSnapshotFromUrl();
+
+// ─── 表をコピー／CSV（表示中の絞り込みを反映） ─────────────
+function tableRows() {
+  const R = lastResult; if (!R) return [];
+  const groups = [R.buckets[0], R.buckets[1], R.buckets[2], R.s2m].map(g => g.filter(passFilter));
+  const out = [];
+  groups.forEach((g, i) => g.forEach(r => {
+    const last7 = (r.last7 || []).map(d => d.date + (d.win ? '✅' : '❌')).join(' ');
+    out.push([R.cutoffYMD, PATTERNS[i].label, r.顧客番号, r.案件名, r.施策 || '', r.提供ツール || '', r.ピン検証 || '',
+              r.kintone === '' ? '（空白）' : r.kintone, r.simStatus || '', last7, r.firstDate ? fmtDate(r.firstDate) : '', r.billDate || '']);
+  }));
+  return out;
+}
+const TABLE_HEAD = ['判定日','パターン','顧客番号','案件名','施策','提供ツール','ピン検証','kintoneステータス','シミュレーション結果','直近7日','初成果日','課金開始日にセットする日'];
+document.getElementById('copyTableBtn').addEventListener('click', async () => {
+  const st = document.getElementById('snapStatus');
+  const rows = tableRows(); if (!rows.length) { st.style.color = '#d93025'; st.textContent = 'コピーする行がありません'; return; }
+  const tsv = [TABLE_HEAD, ...rows].map(r => r.map(v => String(v).replace(/\t/g, ' ')).join('\t')).join('\n');
+  try { await navigator.clipboard.writeText(tsv); st.style.color = '#1a8e3e'; st.textContent = '✅ ' + rows.length + '行をコピーしました（スプレッドシートにそのまま貼り付け可）'; }
+  catch (e) { st.style.color = '#d93025'; st.textContent = '❌ コピーできませんでした：' + e.message; }
+});
+document.getElementById('csvTableBtn').addEventListener('click', () => {
+  const rows = tableRows(); if (!rows.length) return;
+  const q = v => { v = String(v).replace(/"/g, '""'); return /[",\n]/.test(v) ? '"' + v + '"' : v; };
+  const csv = [TABLE_HEAD, ...rows].map(r => r.map(q).join(',')).join('\r\n');
+  downloadCSV(csv, 'meo_判定結果_' + (lastResult.cutoffYMD || '').replace(/-/g, '') + '.csv');
+});
 </script>
 </body>
 </html>
