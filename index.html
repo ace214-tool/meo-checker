@@ -677,7 +677,7 @@ function runMatch() {
         else if (tool==='チェキ') { days = chekiUD[custNum]; }
         if (!days) continue; // 提供ツールなし・CSVに成績なしは判定対象外
 
-        const base = { レコード番号:recordNum, 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku, plan, kintone:isBlank?'':kRaw, last7:days.slice(-7) };
+        const base = { レコード番号:recordNum, 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku, plan, ピン検証:(row['ピン検証']||'').trim(), kintone:isBlank?'':kRaw, last7:days.slice(-7) };
 
         if (plan === 's2m') {
           // ── 成⇒月：課金開始日が空で、初成果が出た案件だけ拾う
@@ -757,14 +757,14 @@ function renderResults(buckets, s2m, cutoffYMD, scroll) {
   const r=document.getElementById('results'); r.classList.add('visible'); if (scroll) r.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function buildTable(rows, showDate) {
-  const cols=['顧客番号','案件名','施策','提供ツール','kintoneステータス','シミュレーション結果','直近7日'];
+  const cols=['顧客番号','案件名','施策','提供ツール','ピン検証','kintoneステータス','シミュレーション結果','直近7日'];
   if(showDate) cols.push('初成果日');
   const hasBill = rows.some(r => r.billDate);
   if(hasBill) cols.push('課金開始日にセットする日');
   const head=cols.map(c=>`<th>${c}</th>`).join('');
   const body=rows.map(r=>{
     const kLabel=r.kintone===''?'（空白）':r.kintone;
-    return `<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}</td><td>${kLabel}</td><td>${r.simStatus}</td><td>${renderLast7(r.last7)}</td>${showDate?`<td>${r.firstDate?`<span class="date-val">${fmtDate(r.firstDate)}</span>`:'<span style="color:#aaa">-</span>'}</td>`:''}${hasBill?`<td><span class="date-val">${esc(r.billDate||'')}</span></td>`:''}</tr>`;
+    return `<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}</td><td>${r.ピン検証?esc(r.ピン検証):'<span style="color:#aaa">-</span>'}</td><td>${kLabel}</td><td>${r.simStatus}</td><td>${renderLast7(r.last7)}</td>${showDate?`<td>${r.firstDate?`<span class="date-val">${fmtDate(r.firstDate)}</span>`:'<span style="color:#aaa">-</span>'}</td>`:''}${hasBill?`<td><span class="date-val">${esc(r.billDate||'')}</span></td>`:''}</tr>`;
   }).join('');
   return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
@@ -839,7 +839,7 @@ function showKintoneSummary() {
 function buildFieldCheck() {
   if (!meoData || !meoData.length) return '';
   const headers = Object.keys(meoData[0]);
-  const need = ['レコード番号', '顧客番号', 'モノ顧客番号', '提供ツール', '継続課金', '課金開始日', '契約プラン', '施策'];
+  const need = ['レコード番号', '顧客番号', 'モノ顧客番号', '提供ツール', '継続課金', '課金開始日', '契約プラン', '施策', 'ピン検証'];
   const items = need.map(h => {
     const ok = headers.includes(h);
     let sample = '';
