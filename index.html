@@ -228,10 +228,10 @@ body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .u
 
   <div class="upload-card">
     <div class="drop-slot drop-slot-unified" id="dropSlot-tools">
-      <input type="file" accept=".csv" multiple style="display:none" id="fileInput-tools">
+      <input type="file" accept=".csv,.zip" multiple style="display:none" id="fileInput-tools">
       <div class="ds-body" style="width:100%">
         <div class="ds-label" style="color:#444;font-size:16px;font-weight:700">② ツールCSVをドロップ（モノ・チェキ どちらか1つでもOK／前月＋当月の複数ファイル可）</div>
-        <div class="ds-hint" style="margin-top:4px">持っているファイルだけドロップすれば照合できます。ファイル名から自動振り分け。<br>月初など日数が足りないときは、前月分と当月分の両方をドロップすると日付順につないで判定します。</div>
+        <div class="ds-hint" style="margin-top:4px">持っているファイルだけドロップすれば照合できます。ファイル名から自動振り分け。チェキはメールで届いた <strong>zipのまま</strong> 入れてOKです。<br>月初など日数が足りないときは、前月分と当月分の両方をドロップすると日付順につないで判定します。</div>
         <div class="unified-status">
           <span class="us-item" id="us-tool">⬜ モノ（任意）</span>
           <span class="us-item" id="us-cheki">⬜ チェキ（任意）</span>
@@ -301,6 +301,7 @@ body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .u
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 const KINTONE_GAS_URL = 'https://script.google.com/macros/s/AKfycbymkQZK5BB9DKc1JwMBMhse016CHIeE0sG9gcRVPvnnwoXlmVtkKBlEpzjOM-sS2esD6w/exec';
 
@@ -386,19 +387,58 @@ function detectSlot(fileName) {
   slot.addEventListener('drop', e => { e.preventDefault(); slot.classList.remove('drag-over'); handleUnifiedFiles(Array.from(e.dataTransfer.files)); });
 })();
 
-function handleUnifiedFiles(files) {
-  const unmatched = [];
+// UTF-8で読めなければShift-JISで読む
+function decodeBytes(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (e) { return new TextDecoder('shift_jis').decode(buf); }
+}
+
+// CSVはそのまま、zip（チェキのメール添付など）は中のCSVを取り出して読み込む
+async function handleUnifiedFiles(files) {
+  const unmatched = [], errors = [];
   for (const f of files) {
-    const rule = detectSlot(f.name);
-    if (!rule || rule.key === 'meo') {
-      unmatched.push(f.name);
-      continue;
-    }
-    readAndStore(f, rule);
+    try {
+      if (/\.zip$/i.test(f.name)) {
+        if (typeof JSZip === 'undefined') throw new Error('zipを開く部品を読み込めませんでした。zipを展開してCSVを入れてください');
+        const zip = await JSZip.loadAsync(await f.arrayBuffer());
+        const entries = Object.values(zip.files).filter(z => {
+          const base = z.name.split('/').pop();
+          return !z.dir && /\.csv$/i.test(base) && !base.startsWith('._') && !/^__MACOSX\//.test(z.name);
+        });
+        if (!entries.length) throw new Error('zipの中にCSVがありません');
+        for (const z of entries) {
+          const inner = z.name.split('/').pop();
+          if (!storeToolCSV(inner, decodeBytes(await z.async('arraybuffer')), f.name)) unmatched.push(f.name + ' の中の ' + inner);
+        }
+      } else {
+        if (!storeToolCSV(f.name, decodeBytes(await f.arrayBuffer()), null)) unmatched.push(f.name);
+      }
+    } catch (err) { errors.push(f.name + '：' + err.message); }
+  }
+  if (errors.length > 0) {
+    alert('⚠️ 読み込めなかったファイルがあります：\n\n' + errors.join('\n'));
   }
   if (unmatched.length > 0) {
-    alert('⚠️ ファイル名から判別できないため、以下は読み込めませんでした：\n\n' + unmatched.join('\n') + '\n\n対応ファイル名：\n・モノ：report_days_xxx.csv\n・チェキ：MEO_google_xxx.csv\n\n※MEO案件管理は上の「①」ボタンから取り込んでください');
+    alert('⚠️ モノ・チェキどちらのCSVか判別できないため、以下は読み込めませんでした：\n\n' + unmatched.join('\n') + '\n\n対応ファイル：\n・モノ：report_days_xxx.csv\n・チェキ：MEO_google_xxx.csv（zipのままでもOK）\n\n※MEO案件管理は上の「①」ボタンから取り込んでください');
   }
+}
+
+// ファイル名で振り分け。名前で分からなければ見出し（ユーザーID／施設名）で見分ける。読み込めたら true
+function storeToolCSV(fileName, text, zipName) {
+  let rule = detectSlot(fileName);
+  if (rule && rule.key === 'meo') return false;
+  const data = parseCSV(text);
+  if (!rule) {
+    const head = data.length ? data[0] : {};
+    if ('顧客番号' in head && 'ステータス' in head) return false; // kintoneのCSV
+    if ('ユーザーID' in head) rule = FILE_RULES.find(r => r.key === 'tool');
+    else if ('施設名' in head) rule = FILE_RULES.find(r => r.key === 'cheki');
+    else return false;
+  }
+  if (rule.key === 'tool' && toolFiles.some(f => f.name === fileName)) return true;   // 同名ファイルの二重読込防止
+  if (rule.key === 'cheki' && chekiFiles.some(f => f.name === fileName)) return true;
+  storeData(rule.key, fileName, data, zipName);
+  return true;
 }
 
 function handleSlotFiles(slotKey, files) {
@@ -429,7 +469,7 @@ function readAndStore(file, rule) {
   };
   reader.readAsText(file, rule.encoding);
 }
-function storeData(key, fileName, data) {
+function storeData(key, fileName, data, zipName) {
   if (key === 'meo') {
     meoData = data = data.filter(r => planOf(r) !== 'monthly'); // 月額固定はこのツールの対象外
     document.getElementById('dropSlot-meo').classList.add('loaded');
@@ -443,7 +483,9 @@ function storeData(key, fileName, data) {
   else if (key === 'tool') { toolFiles.push({ name: fileName, data }); updateUnifiedStatus(); }
   else if (key === 'cheki') {
     // ファイル名「MEO_google_YYYY-MM-DD_YYYY-MM-DD.csv」から年月を抽出（取れなければ判定日の年月を採用）
-    const m = fileName.match(/_(\d{4})-(\d{2})-\d{2}_/);
+    // zipから取り出したCSVで中のファイル名に年月が無いときは、zipのファイル名からも探す
+    const ymRe = /_(\d{4})-(\d{2})-\d{2}_/;
+    const m = fileName.match(ymRe) || (zipName ? zipName.match(ymRe) : null);
     let year = null, month = null;
     if (m) { year = m[1]; month = m[2]; }
     else {
