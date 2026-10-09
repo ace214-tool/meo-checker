@@ -56,14 +56,9 @@ header p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
 .date-input:focus { border-color: #1a73e8; background: #e8f0fe; }
 .date-tag { font-size: 12px; background: #e8f0fe; color: #1a73e8; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
 
-.btn-area { text-align: center; margin-bottom: 28px; }
-.btn-match {
-  background: linear-gradient(135deg, #1a73e8, #0d47a1); color: white; border: none;
-  padding: 14px 52px; border-radius: 8px; font-size: 16px; font-weight: 700;
-  cursor: pointer; letter-spacing: 0.05em; box-shadow: 0 4px 14px rgba(26,115,232,0.35);
-}
-.btn-match:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(26,115,232,0.45); }
-.btn-match:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
+.auto-status { text-align: center; margin-bottom: 24px; font-size: 13px; font-weight: 700; color: #888; }
+.auto-status.running { color: #1a73e8; }
+.auto-status.done { color: #1a8e3e; }
 
 .results { display: none; }
 .results.visible { display: block; }
@@ -182,7 +177,7 @@ tbody td.col-name { white-space: normal; word-break: break-all; min-width: 110px
 .snap-url textarea { flex: 1; font-size: 12px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-family: inherit; line-height: 1.5; resize: none; height: 46px; }
 .snap-banner { display: none; background: #fff8e1; border: 1px solid #f0c36d; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.7; }
 .snap-banner strong { color: #b06000; }
-body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .upload-card, body.snap-mode .date-card, body.snap-mode .btn-area, body.snap-mode .download-area, body.snap-mode #snapSaveBtn, body.snap-mode .fb-note { display: none !important; }
+body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .upload-card, body.snap-mode .date-card, body.snap-mode .auto-status, body.snap-mode .download-area, body.snap-mode #snapSaveBtn, body.snap-mode .fb-note { display: none !important; }
 #captureArea { padding: 12px; }
 .download-area {
   background: white; border-radius: 12px; padding: 24px; margin-top: 20px;
@@ -252,9 +247,7 @@ body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .u
     <span class="date-note">この日付時点のデータでステータスをシミュレーションします</span>
   </div>
 
-  <div class="btn-area">
-    <button class="btn-match" id="btnMatch" disabled onclick="runMatch()">③ 照合する</button>
-  </div>
+  <div class="auto-status" id="autoStatus"></div>
 
   <div class="results" id="results">
     <div class="filter-bar" id="filterBar">
@@ -400,6 +393,7 @@ function decodeBytes(buf) {
 // CSVはそのまま、zip（チェキのメール添付など）は中のCSVを取り出して読み込む
 async function handleUnifiedFiles(files) {
   const unmatched = [], errors = [];
+  loadingCount++;
   for (const f of files) {
     try {
       if (/\.zip$/i.test(f.name)) {
@@ -419,6 +413,8 @@ async function handleUnifiedFiles(files) {
       }
     } catch (err) { errors.push(f.name + '：' + err.message); }
   }
+  loadingCount--;
+  checkAutoRun();
   if (errors.length > 0) {
     alert('⚠️ 読み込めなかったファイルがあります：\n\n' + errors.join('\n'));
   }
@@ -509,7 +505,10 @@ document.getElementById('us-reset').addEventListener('click', () => {
   toolFiles = []; chekiFiles = [];
   const t = document.getElementById('us-tool'); t.className = 'us-item'; t.textContent = '⬜ モノ（任意）';
   const c = document.getElementById('us-cheki'); c.className = 'us-item'; c.textContent = '⬜ チェキ（任意）';
-  updateBtnState();
+  // 照合の元データが無くなるので、古い結果は隠す
+  lastBuckets = null; lastResult = null;
+  document.getElementById('results').classList.remove('visible');
+  updateAutoStatus();
 });
 
 function updateUnifiedStatus() {
@@ -533,13 +532,34 @@ function updateUnifiedStatus() {
   }
 }
 // 判定日を変えたら表示も更新
-document.getElementById('judgeDate').addEventListener('change', updateUnifiedStatus);
+document.getElementById('judgeDate').addEventListener('change', () => { updateUnifiedStatus(); checkAutoRun(); });
+
+// ─── 自動照合：①MEO案件管理と②ツールCSVがそろったら照合する（ボタンなし） ───
+// ファイル追加・判定日の変更・①の再取得でも照合し直す。複数ファイルを一度に入れたときは読み終わってから1回だけ走らせる
+let loadingCount = 0, autoRunTimer = null;
+function isReady() { return !!meoData && (toolFiles.length > 0 || chekiFiles.length > 0); }
 function checkAutoRun() {
-  updateBtnState();
+  updateAutoStatus();
+  if (loadingCount > 0 || !isReady() || snapMode) return;
+  clearTimeout(autoRunTimer);
+  autoRunTimer = setTimeout(runMatch, 80);
 }
-function updateBtnState() {
-  document.getElementById('btnMatch').disabled = !meoData || !(toolFiles.length || chekiFiles.length);
+function updateAutoStatus(state) {
+  const el = document.getElementById('autoStatus');
+  const hasTool = toolFiles.length > 0 || chekiFiles.length > 0;
+  if (state === 'running') { el.className = 'auto-status running'; el.textContent = '照合中...'; }
+  else if (state === 'done') {
+    el.className = 'auto-status done';
+    el.textContent = '✅ ' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + ' 照合しました（ファイルの追加・判定日の変更で自動的に照合し直します）';
+  } else {
+    el.className = 'auto-status';
+    el.textContent = (meoData && hasTool) ? ''
+      : meoData ? '②にモノ・チェキのCSV（チェキはzip可）を入れると、自動で照合します'
+      : hasTool ? '①のボタンでMEO案件管理を取得すると、自動で照合します'
+      : '①と②がそろうと、自動で照合します';
+  }
 }
+updateAutoStatus();
 
 // ================================================================
 //  共通：日付キーは 'YYYY/MM/DD'（複数ファイルを月またぎで並べるため）
@@ -710,10 +730,10 @@ function nextMonthFirst(key) {
 // ================================================================
 let lastResult = null; // { buckets, s2m, cutoffYMD }
 function runMatch() {
-  if (!meoData) return;
-  const btn = document.getElementById('btnMatch');
-  btn.disabled = true; btn.textContent = '照合中...';
+  if (!isReady()) return;
+  updateAutoStatus('running');
   setTimeout(() => {
+    let ok = false;
     try {
       const cutoffYMD = document.getElementById('judgeDate').value;
       const monoUD  = toolFiles.length  ? buildMonoDailyResults(toolFiles, cutoffYMD)   : {};
@@ -754,8 +774,9 @@ function runMatch() {
       lastResult = { buckets, s2m, cutoffYMD };
       renderAll(true);
       showDownloadArea(buckets, s2m);
+      ok = true;
     } catch(err) { alert('照合エラー: '+err.message); }
-    finally { updateBtnState(); btn.textContent='③ 照合する'; }
+    finally { updateAutoStatus(ok ? 'done' : undefined); }
   }, 20);
 }
 
@@ -854,7 +875,6 @@ document.getElementById('kintoneBtn').addEventListener('click', async () => {
     const now = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
     status.textContent = '✅ ' + now + ' 取得完了';
     showKintoneSummary();
-    updateBtnState();
     checkAutoRun();
   } catch (err) {
     status.textContent = '❌ ' + err.message;
