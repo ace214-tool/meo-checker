@@ -175,7 +175,7 @@ tbody td { padding: 10px 14px; white-space: nowrap; }
 .snap-btn.primary:hover { background: #1557b0; }
 .snap-status { font-size: 12px; color: #1a8e3e; font-weight: 600; }
 .snap-url { display: none; align-items: center; gap: 8px; width: 100%; margin-top: 4px; }
-.snap-url input { flex: 1; font-size: 12px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-family: monospace; }
+.snap-url textarea { flex: 1; font-size: 12px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-family: inherit; line-height: 1.5; resize: none; height: 46px; }
 .snap-banner { display: none; background: #fff8e1; border: 1px solid #f0c36d; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.7; }
 .snap-banner strong { color: #b06000; }
 body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .upload-card, body.snap-mode .date-card, body.snap-mode .btn-area, body.snap-mode .download-area, body.snap-mode #snapSaveBtn, body.snap-mode .fb-note { display: none !important; }
@@ -263,7 +263,7 @@ body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .u
       <button class="snap-btn" id="copyTableBtn">📋 表をコピー（スプシ貼り付け用）</button>
       <button class="snap-btn" id="csvTableBtn">📥 表をCSVダウンロード</button>
       <span class="snap-status" id="snapStatus"></span>
-      <div class="snap-url" id="snapUrlBox"><input type="text" id="snapUrlInput" readonly><button class="snap-btn" id="snapUrlCopy">URLをコピー</button></div>
+      <div class="snap-url" id="snapUrlBox"><textarea id="snapUrlInput" readonly rows="2"></textarea><button class="snap-btn" id="snapUrlCopy">📋 コピー</button></div>
     </div>
     <div id="captureArea">
     <div class="summary-bar" id="summaryBar"></div>
@@ -1050,16 +1050,19 @@ document.getElementById('snapSaveBtn').addEventListener('click', async () => {
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || '保存失敗');
     const url = location.origin + location.pathname + '?snap=' + j.id;
-    document.getElementById('snapUrlInput').value = url;
+    // チャットにそのまま貼れる形：「■2026年10月08日_MEO成果報酬」＋改行＋URL（月額案件チェックと同じ形式）
+    const [y, m, d] = (lastResult.cutoffYMD || '').split('-');
+    const text = `■${y}年${m}月${d}日_MEO成果報酬\n${url}`;
+    document.getElementById('snapUrlInput').value = text;
     document.getElementById('snapUrlBox').style.display = 'flex';
     st.style.color = '#1a8e3e'; st.textContent = '✅ 保存しました';
-    try { await navigator.clipboard.writeText(url); st.textContent += '（URLをクリップボードにコピー済み）'; } catch (e) {}
+    try { await navigator.clipboard.writeText(text); st.textContent += '（見出し＋URLをコピー済み。そのまま貼り付けできます）'; } catch (e) {}
   } catch (err) { st.style.color = '#d93025'; st.textContent = '❌ 保存に失敗：' + err.message; }
   finally { btn.disabled = false; }
 });
 document.getElementById('snapUrlCopy').addEventListener('click', async () => {
   const inp = document.getElementById('snapUrlInput'); inp.select();
-  try { await navigator.clipboard.writeText(inp.value); document.getElementById('snapStatus').textContent = '✅ URLをコピーしました'; } catch (e) { document.execCommand('copy'); }
+  try { await navigator.clipboard.writeText(inp.value); document.getElementById('snapStatus').textContent = '✅ 見出し＋URLをコピーしました'; } catch (e) { document.execCommand('copy'); }
 });
 
 // 閲覧モード：?snap=ID があればGASから取得して表示だけする（入力欄・更新CSVは隠す）
